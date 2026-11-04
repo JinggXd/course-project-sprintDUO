@@ -1,0 +1,124 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  STUDENT
+  SUPERVISOR
+}
+
+enum SubmissionStatus {
+  SUBMITTED
+  APPROVED
+  CHANGES_REQUESTED
+}
+
+model User {
+  id           Int      @id @default(autoincrement())
+  email        String   @unique
+  name         String
+  passwordHash String
+  role         Role
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+
+  sessions          Session[]
+  supervisedTeams   Team[]       @relation("TeamSupervisor")
+  teamMemberships   TeamMember[]
+  createdMilestones Milestone[]  @relation("MilestoneCreator")
+  submissions       Submission[] @relation("SubmissionAuthor")
+  recordedFeedbacks Feedback[]   @relation("FeedbackSupervisor")
+}
+
+model Session {
+  id        String   @id
+  userId    Int
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model Team {
+  id           Int      @id @default(autoincrement())
+  code         String   @unique
+  name         String
+  projectTitle String
+  supervisorId Int
+  createdAt    DateTime @default(now())
+
+  supervisor User         @relation("TeamSupervisor", fields: [supervisorId], references: [id])
+  members    TeamMember[]
+  milestones Milestone[]
+
+  @@index([supervisorId])
+}
+
+model TeamMember {
+  id       Int      @id @default(autoincrement())
+  teamId   Int
+  userId   Int
+  joinedAt DateTime @default(now())
+
+  team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([teamId, userId])
+  @@index([userId])
+}
+
+model Milestone {
+  id          Int      @id @default(autoincrement())
+  teamId      Int
+  createdById Int
+  title       String
+  description String
+  dueDate     DateTime
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  team        Team         @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  createdBy   User         @relation("MilestoneCreator", fields: [createdById], references: [id])
+  submissions Submission[]
+
+  @@index([teamId, dueDate])
+}
+
+model Submission {
+  id            Int              @id @default(autoincrement())
+  milestoneId   Int
+  submittedById Int
+  title         String
+  description   String
+  artifactUrl   String
+  status        SubmissionStatus @default(SUBMITTED)
+  submittedAt   DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+
+  milestone   Milestone  @relation(fields: [milestoneId], references: [id], onDelete: Cascade)
+  submittedBy User       @relation("SubmissionAuthor", fields: [submittedById], references: [id])
+  feedbacks   Feedback[]
+
+  @@index([milestoneId])
+}
+
+model Feedback {
+  id           Int              @id @default(autoincrement())
+  submissionId Int
+  supervisorId Int
+  comment      String
+  status       SubmissionStatus
+  createdAt    DateTime         @default(now())
+
+  submission Submission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+  supervisor User       @relation("FeedbackSupervisor", fields: [supervisorId], references: [id])
+
+  @@index([submissionId])
+}

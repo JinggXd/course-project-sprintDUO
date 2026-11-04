@@ -1,0 +1,13 @@
+{
+  "name": "sprintduo-workspace",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "npm --prefix server run build && npm --prefix client run build",
+    "test:server": "npm --prefix server test",
+    "test:client": "npm --prefix client test",
+    "test:all": "npm run test:server && npm run test:client"
+  }
+}
+

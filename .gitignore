@@ -1,0 +1,18 @@
+# dependencies
+node_modules/
+# env & secrets
+.env
+*.env
+!.env.example
+# build output
+dist/
+build/
+# logs & OS
+*.log
+.DS_Store
+.vite/
+# playwright & test outputs
+test-results/
+playwright-report/
+*.zip
+
