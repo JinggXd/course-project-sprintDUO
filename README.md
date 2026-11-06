@@ -34,20 +34,21 @@ All specification, design, traceability, and Sprint 1 engineering contract docum
 
 ### 3.1 Prerequisites
 - Node.js `>= 20.x` and npm
-- PostgreSQL `>= 15.x` running locally
+- Docker Desktop (for running the isolated PostgreSQL container via `docker compose up -d`)
 
-### 3.2 Environment Variables
-Copy the example environment files and configure your local PostgreSQL connection strings:
+### 3.2 Start PostgreSQL via Docker & Configure Environment Variables
+Start the local PostgreSQL container (maps to port `5434` so it never conflicts with default port `5432` or `5433`):
 
 ```bash
+docker compose up -d
 cp server/.env.example server/.env
 cp client/.env.example client/.env
 ```
 
 Example `server/.env`:
 ```env
-DATABASE_URL="postgresql://postgres:postgres@localhost:5432/sprintduo_dev?schema=public"
-DATABASE_URL_TEST="postgresql://postgres:postgres@localhost:5432/sprintduo_test?schema=public"
+DATABASE_URL="postgresql://sprintduo:sprintduo@localhost:5434/sprintduo_dev?schema=public"
+DATABASE_URL_TEST="postgresql://sprintduo:sprintduo@localhost:5434/sprintduo_test?schema=public"
 PORT=3000
 CLIENT_ORIGIN="http://localhost:5173"
 ```

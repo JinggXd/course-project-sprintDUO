@@ -1,0 +1,21 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: sprintduo-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: sprintduo
+      POSTGRES_PASSWORD: sprintduo
+      POSTGRES_DB: sprintduo_dev
+    ports:
+      - "5434:5432"
+    volumes:
+      - sprintduo_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sprintduo -d sprintduo_dev"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  sprintduo_pgdata:
