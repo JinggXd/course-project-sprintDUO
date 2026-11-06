@@ -69,9 +69,16 @@ export function App() {
   const [newDesc, setNewDesc] = useState("");
   const [newDueDate, setNewDueDate] = useState("");
 
+  // Submit Milestone Work form (Student — F-02)
+  const [subTitle, setSubTitle] = useState<{ [msId: number]: string }>({});
+  const [subDesc, setSubDesc] = useState<{ [msId: number]: string }>({});
+  const [subUrl, setSubUrl] = useState<{ [msId: number]: string }>({});
+
   // Record Feedback form (Supervisor)
   const [feedbackComment, setFeedbackComment] = useState<{ [subId: number]: string }>({});
-  const [feedbackStatus, setFeedbackStatus] = useState<{ [subId: number]: "APPROVED" | "CHANGES_REQUESTED" }>({});
+  const [feedbackStatus, setFeedbackStatus] = useState<{
+    [subId: number]: "APPROVED" | "CHANGES_REQUESTED";
+  }>({});
 
   useEffect(() => {
     checkAuth();
@@ -185,6 +192,37 @@ export function App() {
       selectTeam(selectedTeam);
     } catch {
       setError("Error creating milestone");
+    }
+  }
+
+  async function handleSubmitMilestoneWork(e: React.FormEvent, milestoneId: number) {
+    e.preventDefault();
+    setError(null);
+    setSuccess(null);
+
+    const title = subTitle[milestoneId] || "";
+    const description = subDesc[milestoneId] || "";
+    const artifactUrl = subUrl[milestoneId] || "";
+
+    try {
+      const res = await fetch(`/api/milestones/${milestoneId}/submissions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title, description, artifactUrl }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        const detailMsg = data.details ? Object.values(data.details).join(" ") : "";
+        setError(detailMsg || data.message || "Failed to submit milestone work");
+        return;
+      }
+      setSuccess("Milestone work submitted successfully!");
+      setSubTitle({ ...subTitle, [milestoneId]: "" });
+      setSubDesc({ ...subDesc, [milestoneId]: "" });
+      setSubUrl({ ...subUrl, [milestoneId]: "" });
+      if (selectedTeam) selectTeam(selectedTeam);
+    } catch {
+      setError("Error submitting milestone work");
     }
   }
 
@@ -322,7 +360,7 @@ export function App() {
           </div>
         )}
         {success && (
-          <div className="alert alert-success alert-dismissible" role="alert">
+          <div className="alert alert-success alert-dismissible" role="status">
             {success}
             <button
               type="button"
@@ -440,6 +478,65 @@ export function App() {
                     </div>
                     <div className="card-body">
                       <p>{ms.description}</p>
+
+                      {/* Student Action: Submit Milestone Work Form (F-02) */}
+                      {currentUser.role === "STUDENT" && (
+                        <div className="card p-3 my-3 border bg-white">
+                          <h6 className="fw-bold mb-2">Submit Milestone Work</h6>
+                          <form onSubmit={(e) => handleSubmitMilestoneWork(e, ms.id)}>
+                            <div className="row g-2">
+                              <div className="col-12 col-md-6">
+                                <input
+                                  type="text"
+                                  className="form-control form-control-sm"
+                                  placeholder="Submission Title (3–150 chars)"
+                                  data-testid={`submission-title-${ms.id}`}
+                                  value={subTitle[ms.id] || ""}
+                                  onChange={(e) =>
+                                    setSubTitle({ ...subTitle, [ms.id]: e.target.value })
+                                  }
+                                  required
+                                />
+                              </div>
+                              <div className="col-12 col-md-6">
+                                <input
+                                  type="text"
+                                  className="form-control form-control-sm"
+                                  placeholder="Artifact URL (https://...)"
+                                  data-testid={`submission-url-${ms.id}`}
+                                  value={subUrl[ms.id] || ""}
+                                  onChange={(e) =>
+                                    setSubUrl({ ...subUrl, [ms.id]: e.target.value })
+                                  }
+                                  required
+                                />
+                              </div>
+                              <div className="col-12 col-md-9">
+                                <input
+                                  type="text"
+                                  className="form-control form-control-sm"
+                                  placeholder="Submission description and summary (5–2000 chars)..."
+                                  data-testid={`submission-desc-${ms.id}`}
+                                  value={subDesc[ms.id] || ""}
+                                  onChange={(e) =>
+                                    setSubDesc({ ...subDesc, [ms.id]: e.target.value })
+                                  }
+                                  required
+                                />
+                              </div>
+                              <div className="col-12 col-md-3">
+                                <button
+                                  type="submit"
+                                  className="btn btn-primary btn-sm w-100"
+                                  data-testid={`submission-submit-${ms.id}`}
+                                >
+                                  Submit Work
+                                </button>
+                              </div>
+                            </div>
+                          </form>
+                        </div>
+                      )}
 
                       {/* Submissions Section */}
                       <h6 className="fw-bold mt-4 mb-2">Submissions</h6>
