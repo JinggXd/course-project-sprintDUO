@@ -4,18 +4,69 @@ services:
     container_name: sprintduo-db
     restart: unless-stopped
     environment:
-      POSTGRES_USER: sprintduo
-      POSTGRES_PASSWORD: sprintduo
-      POSTGRES_DB: sprintduo_dev
+      POSTGRES_USER: ${POSTGRES_USER:-sprintduo}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-sprintduo}
+      POSTGRES_DB: ${POSTGRES_DB:-sprintduo_dev}
     ports:
       - "5434:5432"
     volumes:
       - sprintduo_pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U sprintduo -d sprintduo_dev"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-sprintduo} -d ${POSTGRES_DB:-sprintduo_dev}"]
       interval: 5s
       timeout: 5s
-      retries: 5
+      retries: 10
+
+  migrate:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    container_name: sprintduo-migrate
+    restart: "no"
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      NODE_ENV: ${NODE_ENV:-production}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-sprintduo}:${POSTGRES_PASSWORD:-sprintduo}@db:5432/${POSTGRES_DB:-sprintduo_dev}?schema=public
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-LocalDevAdmin123!}
+      DEMO_USER_PASSWORD: ${DEMO_USER_PASSWORD:-LocalDevDemo123!}
+      SEED_DEMO_DATA: ${SEED_DEMO_DATA:-true}
+    command: ["sh", "-c", "npx prisma migrate deploy && npm run prisma:seed"]
+
+  server:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    container_name: sprintduo-server
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      NODE_ENV: production
+      TZ: Asia/Bangkok
+      PORT: 3000
+      SERVE_STATIC: "false"
+      CLIENT_ORIGIN: http://localhost:5173
+      DATABASE_URL: postgresql://${POSTGRES_USER:-sprintduo}:${POSTGRES_PASSWORD:-sprintduo}@db:5432/${POSTGRES_DB:-sprintduo_dev}?schema=public
+    ports:
+      - "3000:3000"
+
+  client:
+    build:
+      context: ./client
+      dockerfile: Dockerfile
+      args:
+        VITE_API_URL: ""
+    container_name: sprintduo-client
+    restart: unless-stopped
+    depends_on:
+      - server
+    ports:
+      - "5173:80"
 
 volumes:
   sprintduo_pgdata:
