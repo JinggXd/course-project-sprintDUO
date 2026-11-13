@@ -1,8 +1,19 @@
 import crypto from "node:crypto";
-import type { Response } from "express";
+import type { Request, Response } from "express";
 
 export const SESSION_COOKIE_NAME = "sprintduo_session";
 export const SESSION_MAX_AGE_SECONDS = 28800; // 8 hours
+
+/**
+ * Determine whether the incoming request arrived over HTTPS (directly or via reverse proxy).
+ */
+export function isSecureRequest(req: Request): boolean {
+  if (req.secure) {
+    return true;
+  }
+  const forwardedProto = req.get("x-forwarded-proto");
+  return forwardedProto?.split(",")[0]?.trim().toLowerCase() === "https";
+}
 
 /**
  * Generate a cryptographically secure 32-byte base64url session token.
@@ -62,10 +73,17 @@ export function setSessionCookie(
 /**
  * Clear the sprintduo_session cookie on the response.
  */
-export function clearSessionCookie(res: Response): void {
-  res.setHeader(
-    "Set-Cookie",
-    `${SESSION_COOKIE_NAME}=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT; HttpOnly; SameSite=Lax`,
-  );
+export function clearSessionCookie(res: Response, secure = false): void {
+  const flags = [
+    `${SESSION_COOKIE_NAME}=`,
+    "Path=/",
+    "Expires=Thu, 01 Jan 1970 00:00:00 GMT",
+    "HttpOnly",
+    "SameSite=Lax",
+  ];
+  if (secure) {
+    flags.push("Secure");
+  }
+  res.setHeader("Set-Cookie", flags.join("; "));
 }
 

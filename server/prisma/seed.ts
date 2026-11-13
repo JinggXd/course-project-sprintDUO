@@ -3,57 +3,91 @@ import { hashPassword } from "../src/utils/password.js";
 
 const prisma = new PrismaClient();
 
-export async function seedDatabase(client: PrismaClient = prisma): Promise<void> {
-  const defaultPasswordHash = await hashPassword("Password123!");
+function resolveSeedConfig(): {
+  seedDemoData: boolean;
+  adminPassword: string;
+  demoPassword: string;
+} {
+  const isProduction = process.env.NODE_ENV === "production";
+  const rawDemoFlag = process.env.SEED_DEMO_DATA;
+  const seedDemoData = isProduction
+    ? rawDemoFlag === "true"
+    : rawDemoFlag !== "false";
 
-  // 1. Seed Supervisors (Role: SUPERVISOR)
+  const envAdminPassword = process.env.ADMIN_PASSWORD?.trim();
+  const envDemoPassword = process.env.DEMO_USER_PASSWORD?.trim();
+
+  if (isProduction) {
+    if (!envAdminPassword) {
+      throw new Error(
+        "ADMIN_PASSWORD environment variable is required when NODE_ENV=production",
+      );
+    }
+    if (seedDemoData && !envDemoPassword) {
+      throw new Error(
+        "DEMO_USER_PASSWORD environment variable is required when SEED_DEMO_DATA=true in production",
+      );
+    }
+    return {
+      seedDemoData,
+      adminPassword: envAdminPassword,
+      demoPassword: envDemoPassword || "",
+    };
+  }
+
+  return {
+    seedDemoData,
+    adminPassword: envAdminPassword || envDemoPassword || "Password123!",
+    demoPassword: envDemoPassword || "Password123!",
+  };
+}
+
+/**
+ * Idempotently seed initial supervisor and optional demo dataset without overwriting existing users.
+ */
+export async function seedDatabase(client: PrismaClient = prisma): Promise<void> {
+  const { seedDemoData, adminPassword, demoPassword } = resolveSeedConfig();
+  const adminPasswordHash = await hashPassword(adminPassword);
+
+  // 1. Ensure initial supervisor account exists (never overwrites existing credentials).
   const advisor1 = await client.user.upsert({
     where: { email: "sup.advisor1@sprintduo.edu" },
-    update: {
-      name: "Dr. Kittipong (Advisor 1)",
-      passwordHash: defaultPasswordHash,
-      role: "SUPERVISOR",
-      isActive: true,
-    },
+    update: {},
     create: {
       email: "sup.advisor1@sprintduo.edu",
       name: "Dr. Kittipong (Advisor 1)",
-      passwordHash: defaultPasswordHash,
+      passwordHash: adminPasswordHash,
       role: "SUPERVISOR",
       isActive: true,
     },
   });
 
+  if (!seedDemoData) {
+    return;
+  }
+
+  const demoPasswordHash = await hashPassword(demoPassword);
+
+  // 2. Seed additional demo supervisor & student accounts.
   const advisor2 = await client.user.upsert({
     where: { email: "sup.advisor2@sprintduo.edu" },
-    update: {
-      name: "Dr. Nattaya (Advisor 2)",
-      passwordHash: defaultPasswordHash,
-      role: "SUPERVISOR",
-      isActive: true,
-    },
+    update: {},
     create: {
       email: "sup.advisor2@sprintduo.edu",
       name: "Dr. Nattaya (Advisor 2)",
-      passwordHash: defaultPasswordHash,
+      passwordHash: demoPasswordHash,
       role: "SUPERVISOR",
       isActive: true,
     },
   });
 
-  // 2. Seed Students (Role: STUDENT)
   const studentJing = await client.user.upsert({
     where: { email: "stu.jing@sprintduo.edu" },
-    update: {
-      name: "Phongsatorn (67070501084)",
-      passwordHash: defaultPasswordHash,
-      role: "STUDENT",
-      isActive: true,
-    },
+    update: {},
     create: {
       email: "stu.jing@sprintduo.edu",
       name: "Phongsatorn (67070501084)",
-      passwordHash: defaultPasswordHash,
+      passwordHash: demoPasswordHash,
       role: "STUDENT",
       isActive: true,
     },
@@ -61,16 +95,11 @@ export async function seedDatabase(client: PrismaClient = prisma): Promise<void>
 
   const studentYumi = await client.user.upsert({
     where: { email: "stu.yumi@sprintduo.edu" },
-    update: {
-      name: "Yuminnini (67070501036)",
-      passwordHash: defaultPasswordHash,
-      role: "STUDENT",
-      isActive: true,
-    },
+    update: {},
     create: {
       email: "stu.yumi@sprintduo.edu",
       name: "Yuminnini (67070501036)",
-      passwordHash: defaultPasswordHash,
+      passwordHash: demoPasswordHash,
       role: "STUDENT",
       isActive: true,
     },
@@ -78,16 +107,11 @@ export async function seedDatabase(client: PrismaClient = prisma): Promise<void>
 
   const studentOther = await client.user.upsert({
     where: { email: "stu.other@sprintduo.edu" },
-    update: {
-      name: "Somchai (67070501099 - Team Beta)",
-      passwordHash: defaultPasswordHash,
-      role: "STUDENT",
-      isActive: true,
-    },
+    update: {},
     create: {
       email: "stu.other@sprintduo.edu",
       name: "Somchai (67070501099 - Team Beta)",
-      passwordHash: defaultPasswordHash,
+      passwordHash: demoPasswordHash,
       role: "STUDENT",
       isActive: true,
     },
@@ -95,29 +119,20 @@ export async function seedDatabase(client: PrismaClient = prisma): Promise<void>
 
   const studentOther2 = await client.user.upsert({
     where: { email: "stu.other2@sprintduo.edu" },
-    update: {
-      name: "Suda (67070501098 - Team Beta)",
-      passwordHash: defaultPasswordHash,
-      role: "STUDENT",
-      isActive: true,
-    },
+    update: {},
     create: {
       email: "stu.other2@sprintduo.edu",
       name: "Suda (67070501098 - Team Beta)",
-      passwordHash: defaultPasswordHash,
+      passwordHash: demoPasswordHash,
       role: "STUDENT",
       isActive: true,
     },
   });
 
-  // 3. Seed Teams
+  // 3. Seed demo Teams (non-destructive)
   const teamAlpha = await client.team.upsert({
     where: { code: "TEAM-ALPHA" },
-    update: {
-      name: "Team Alpha (SprintDUO)",
-      projectTitle: "Course Project Milestone & Supervision Tracker",
-      supervisorId: advisor1.id,
-    },
+    update: {},
     create: {
       code: "TEAM-ALPHA",
       name: "Team Alpha (SprintDUO)",
@@ -128,11 +143,7 @@ export async function seedDatabase(client: PrismaClient = prisma): Promise<void>
 
   const teamBeta = await client.team.upsert({
     where: { code: "TEAM-BETA" },
-    update: {
-      name: "Team Beta",
-      projectTitle: "Smart Campus IoT Monitoring",
-      supervisorId: advisor2.id,
-    },
+    update: {},
     create: {
       code: "TEAM-BETA",
       name: "Team Beta",
@@ -200,4 +211,3 @@ if (isDirectRun) {
       process.exit(1);
     });
 }
-

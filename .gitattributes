@@ -1,0 +1,7 @@
+# Force LF line endings for shell scripts, Python scripts, and Docker/CI definitions
+*.sh text eol=lf
+docker-entrypoint.sh text eol=lf
+Dockerfile text eol=lf
+*.py text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
