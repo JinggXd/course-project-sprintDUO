@@ -272,6 +272,7 @@ export function App() {
             <div className="card shadow-sm border-0">
               <div className="card-body p-4">
                 <h2 className="text-center fw-bold mb-4">SprintDUO Sign In</h2>
+                <p className="text-center text-success small mb-3">Deployed automatically via CI/CD — Release B</p>
                 {error && (
                   <div className="alert alert-danger" role="alert">
                     {error}
@@ -349,6 +350,7 @@ export function App() {
 
       {/* Main Container */}
       <div className="container py-4">
+        <p className="text-success small mb-3">Deployed automatically via CI/CD — Release B</p>
         {error && (
           <div className="alert alert-danger alert-dismissible" role="alert">
             {error}
