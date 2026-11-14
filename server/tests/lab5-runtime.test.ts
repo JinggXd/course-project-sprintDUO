@@ -60,7 +60,7 @@ describe("Lab 5 Container Readiness, Proxy Cookie, Static SPA & Non-Destructive 
 
       const res = await request(testApp).get("/api/ready");
 
-      expect(res.status).toBe(200);
+      expect(res.status).toBe(201);
       expect(res.body).toEqual({ db: "connected" });
       expect(mockPrisma.$queryRaw).toHaveBeenCalledTimes(1);
     });
