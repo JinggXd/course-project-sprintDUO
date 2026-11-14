@@ -15,4 +15,7 @@ build/
 test-results/
 playwright-report/
 *.zip
+# python bytecode
+__pycache__/
+*.pyc
 

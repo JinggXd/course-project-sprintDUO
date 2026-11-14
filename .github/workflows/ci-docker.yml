@@ -1,0 +1,94 @@
+# ##############################################################################
+# CI — "CI & Docker Build" (SprintDUO)
+# ##############################################################################
+# WHAT THIS WORKFLOW DOES
+#   1) Runs directly on every Pull Request to `staging` or `main` (and manually),
+#   2) Acts as a reusable workflow (`workflow_call`) called by `deploy.yml` so
+#      deployments only start after all checks pass.
+#   Steps: offline deploy-script checks -> backend tests (real PostgreSQL 16)
+#          -> frontend tests + production build -> verify unified Dockerfile build.
+#
+# ⚠️ DO NOT RENAME:
+#   - job id : test-and-docker (required by `deploy.yml` and the `main` ruleset)
+# ##############################################################################
+
+name: CI & Docker Build
+
+on:
+  workflow_call:
+  pull_request:
+    branches: [main, staging]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test-and-docker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: sprintduo
+          POSTGRES_PASSWORD: sprintduo
+          POSTGRES_DB: sprintduo_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js 24
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24"
+
+      - name: Setup Python 3.14
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.14"
+
+      - name: Check deployment scripts without accessing GCP
+        run: |
+          bash -n deploy/deploy.sh deploy/teardown.sh deploy/release.sh
+          bash deploy/tests/test_deploy_stub.sh
+          bash deploy/tests/test_release_stub.sh
+          python3 -m unittest discover -s deploy/tests -p 'test_smoke.py'
+
+      - name: Install & Test Backend (Prisma Migrate + Seed + Vitest + Build)
+        working-directory: ./server
+        env:
+          DATABASE_URL: postgresql://sprintduo:sprintduo@localhost:5432/sprintduo_test?schema=public
+          DATABASE_URL_TEST: postgresql://sprintduo:sprintduo@localhost:5432/sprintduo_test?schema=public
+        run: |
+          npm ci
+          npx prisma migrate deploy
+          npm run prisma:seed
+          npm test
+          npm run build
+
+      - name: Install, Test & Build Frontend (Vitest + Production Build)
+        working-directory: ./client
+        run: |
+          npm ci
+          npm test
+          npm run build
+
+      - name: Verify Unified Production Dockerfile Build
+        run: |
+          docker build -t sprintduo-lab5:latest .

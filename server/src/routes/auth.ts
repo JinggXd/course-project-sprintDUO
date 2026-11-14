@@ -4,6 +4,7 @@ import { verifyPassword } from "../utils/password.js";
 import {
   generateSessionToken,
   hashSessionToken,
+  isSecureRequest,
   setSessionCookie,
   clearSessionCookie,
 } from "../utils/session.js";
@@ -57,7 +58,7 @@ authRouter.post("/login", async (req: Request, res: Response): Promise<void> => 
       },
     });
 
-    setSessionCookie(res, rawToken);
+    setSessionCookie(res, rawToken, isSecureRequest(req));
 
     res.status(200).json({
       user: {
@@ -86,6 +87,6 @@ authRouter.post("/logout", async (req: Request, res: Response): Promise<void> =>
       // Ignored if already deleted
     }
   }
-  clearSessionCookie(res);
+  clearSessionCookie(res, isSecureRequest(req));
   res.status(204).end();
 });
