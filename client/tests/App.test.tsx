@@ -206,4 +206,158 @@ describe("SprintDUO Client UI — TEST-03 & TEST-04 Student Submission & Persist
     const alert = await screen.findByRole("alert");
     expect(alert).toHaveTextContent(/Milestone deadline has passed/i);
   });
+
+  // ---------------------------------------------------------------------------
+  // Lab 6 UAT Defect Regression Tests: DEF-SD-02 & DEF-SD-05
+  // ---------------------------------------------------------------------------
+  it("DEF-SD-02: clears previous user error and success alerts on Log Out and next Sign In", async () => {
+    const milestonesState = [
+      {
+        id: 102,
+        title: "Milestone 0: Initial Project Charter (Past Due Demo)",
+        description: "Submit initial team formation charter.",
+        dueDate: pastDue,
+        submissions: [],
+      },
+    ];
+
+    const mockSupervisorAlpha = {
+      id: 1,
+      name: "Dr. Kittipong (Advisor 1)",
+      email: "sup.advisor1@sprintduo.edu",
+      role: "SUPERVISOR",
+    };
+
+    let loggedInUser: any = mockStudent;
+
+    globalThis.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input.toString();
+      const method = init?.method || "GET";
+
+      if (url === "/api/auth/me") {
+        if (!loggedInUser) return { ok: false, status: 401, json: async () => ({}) } as Response;
+        return { ok: true, status: 200, json: async () => ({ user: loggedInUser }) } as Response;
+      }
+      if (url === "/api/auth/logout" && method === "POST") {
+        loggedInUser = null;
+        return { ok: true, status: 204, json: async () => ({}) } as Response;
+      }
+      if (url === "/api/auth/login" && method === "POST") {
+        loggedInUser = mockSupervisorAlpha;
+        return { ok: true, status: 200, json: async () => ({ user: mockSupervisorAlpha }) } as Response;
+      }
+      if (url === "/api/teams") {
+        return { ok: true, status: 200, json: async () => ({ teams: [mockTeam] }) } as Response;
+      }
+      if (url === "/api/teams/1/milestones") {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ team: mockTeam, milestones: milestonesState }),
+        } as Response;
+      }
+      if (url === "/api/milestones/102/submissions" && method === "POST") {
+        return {
+          ok: false,
+          status: 400,
+          json: async () => ({
+            error: "DEADLINE_PASSED",
+            message: "Milestone deadline has passed",
+          }),
+        } as Response;
+      }
+      return { ok: false, status: 404, json: async () => ({}) } as Response;
+    }) as any;
+
+    const user = userEvent.setup();
+    render(<App />);
+
+    // Trigger error alert as Student-Alpha-1
+    await user.type(await screen.findByTestId("submission-title-102"), "Late Draft");
+    await user.type(screen.getByTestId("submission-url-102"), "https://example.com/late");
+    await user.type(screen.getByTestId("submission-desc-102"), "Late submission body");
+    await user.click(screen.getByTestId("submission-submit-102"));
+    expect(await screen.findByRole("alert")).toHaveTextContent(/Milestone deadline has passed/i);
+
+    // Log Out -> Sign In screen MUST NOT retain previous user's error alert
+    await user.click(screen.getByTestId("logout-btn"));
+    expect(await screen.findByText("SprintDUO Sign In")).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
+
+  it("DEF-SD-05: clears unsent Create Milestone and Submit Work drafts across Log Out and cross-team Sign In", async () => {
+    const mockSupAlpha = {
+      id: 1,
+      name: "Dr. Kittipong (Advisor 1)",
+      email: "sup.advisor1@sprintduo.edu",
+      role: "SUPERVISOR",
+    };
+    const mockSupBeta = {
+      id: 2,
+      name: "Dr. Nattaya (Advisor 2)",
+      email: "sup.advisor2@sprintduo.edu",
+      role: "SUPERVISOR",
+    };
+    const mockTeamBeta = {
+      id: 2,
+      code: "TEAM-BETA",
+      name: "Team Beta",
+      projectTitle: "Smart Campus IoT Monitoring",
+      supervisor: { id: 2, name: mockSupBeta.name, email: mockSupBeta.email },
+      members: [{ id: 5, name: "Somchai", email: "stu.other@sprintduo.edu" }],
+    };
+
+    let currentSessionUser: any = mockSupAlpha;
+
+    globalThis.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input.toString();
+      const method = init?.method || "GET";
+
+      if (url === "/api/auth/me") {
+        if (!currentSessionUser) return { ok: false, status: 401, json: async () => ({}) } as Response;
+        return { ok: true, status: 200, json: async () => ({ user: currentSessionUser }) } as Response;
+      }
+      if (url === "/api/auth/logout" && method === "POST") {
+        currentSessionUser = null;
+        return { ok: true, status: 204, json: async () => ({}) } as Response;
+      }
+      if (url === "/api/auth/login" && method === "POST") {
+        currentSessionUser = mockSupBeta;
+        return { ok: true, status: 200, json: async () => ({ user: mockSupBeta }) } as Response;
+      }
+      if (url === "/api/teams") {
+        const list = currentSessionUser?.id === 1 ? [mockTeam] : [mockTeamBeta];
+        return { ok: true, status: 200, json: async () => ({ teams: list }) } as Response;
+      }
+      if (url === "/api/teams/1/milestones") {
+        return { ok: true, status: 200, json: async () => ({ team: mockTeam, milestones: [] }) } as Response;
+      }
+      if (url === "/api/teams/2/milestones") {
+        return { ok: true, status: 200, json: async () => ({ team: mockTeamBeta, milestones: [] }) } as Response;
+      }
+      return { ok: false, status: 404, json: async () => ({}) } as Response;
+    }) as any;
+
+    const user = userEvent.setup();
+    render(<App />);
+
+    // 1. Supervisor-Alpha types unsent Team Alpha draft
+    const msTitle = await screen.findByPlaceholderText("Milestone Title");
+    const msDesc = screen.getByPlaceholderText("Detailed milestone requirements and description...");
+    await user.type(msTitle, "DRAFT from sup1 — Team Alpha private");
+    await user.type(msDesc, "Unsent Team Alpha requirements draft");
+    expect(msTitle).toHaveValue("DRAFT from sup1 — Team Alpha private");
+
+    // 2. Log Out and sign in as Supervisor-Beta in the same tab
+    await user.click(screen.getByTestId("logout-btn"));
+    await user.type(await screen.findByLabelText("Email Address"), "sup.advisor2@sprintduo.edu");
+    await user.type(screen.getByLabelText("Password"), "synthetic-test-pass");
+    await user.click(screen.getByRole("button", { name: "Sign In" }));
+
+    // 3. Supervisor-Beta's Create Milestone form MUST start completely empty
+    expect(await screen.findByText("+ Create Milestone for Team Beta")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("Milestone Title")).toHaveValue("");
+    expect(screen.getByPlaceholderText("Detailed milestone requirements and description...")).toHaveValue("");
+  });
 });
