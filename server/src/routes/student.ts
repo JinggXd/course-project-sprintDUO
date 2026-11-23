@@ -1,7 +1,11 @@
 import { Router, Request, Response } from "express";
 import { getPrisma } from "../prisma.js";
 import { requireAuth, requireRole } from "../middleware/sessionAuth.js";
-import { isDeadlinePassed, validateSubmissionInput } from "../utils/validation.js";
+import {
+  parsePositiveIntId,
+  isDeadlinePassed,
+  validateSubmissionInput,
+} from "../utils/validation.js";
 
 export const studentRouter = Router();
 
@@ -13,9 +17,9 @@ studentRouter.post(
   requireAuth,
   requireRole("STUDENT"),
   async (req: Request, res: Response): Promise<void> => {
-    const milestoneId = parseInt(req.params.milestoneId, 10);
-    if (isNaN(milestoneId)) {
-      res.status(400).json({ error: "VALIDATION_ERROR", message: "Invalid milestone ID" });
+    const milestoneId = parsePositiveIntId(req.params.milestoneId);
+    if (milestoneId === null) {
+      res.status(404).json({ error: "NOT_FOUND", message: "Milestone not found" });
       return;
     }
 
@@ -99,9 +103,9 @@ studentRouter.get(
   "/submissions/:id",
   requireAuth,
   async (req: Request, res: Response): Promise<void> => {
-    const submissionId = parseInt(req.params.id, 10);
-    if (isNaN(submissionId)) {
-      res.status(400).json({ error: "VALIDATION_ERROR", message: "Invalid submission ID" });
+    const submissionId = parsePositiveIntId(req.params.id);
+    if (submissionId === null) {
+      res.status(404).json({ error: "NOT_FOUND", message: "Submission not found" });
       return;
     }
 

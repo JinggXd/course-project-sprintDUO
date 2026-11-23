@@ -264,5 +264,41 @@ describe("F-02 Student Team View, Submission & Deadline Rule (TEST-03, TEST-04, 
         });
       expect(res.status).toBe(403);
     });
+
+    it("DEF-SD-01 & DEF-SD-04 (PostgreSQL integration): rejects INT4 overflow IDs with 404 and 80k-char submission with 413", async () => {
+      const teamOverflow = await request(app)
+        .get("/api/teams/2147483648/milestones")
+        .set("Cookie", studentJingCookie);
+      expect(teamOverflow.status).toBe(404);
+      expect(teamOverflow.body.error).toBe("NOT_FOUND");
+
+      const subGetOverflow = await request(app)
+        .get("/api/submissions/2147483648")
+        .set("Cookie", studentJingCookie);
+      expect(subGetOverflow.status).toBe(404);
+      expect(subGetOverflow.body.error).toBe("NOT_FOUND");
+
+      const subPostOverflow = await request(app)
+        .post("/api/milestones/2147483648/submissions")
+        .set("Cookie", studentJingCookie)
+        .send({
+          title: "Overflow Sub",
+          description: "Valid description for overflow milestone",
+          artifactUrl: "https://example.com/overflow",
+        });
+      expect(subPostOverflow.status).toBe(404);
+      expect(subPostOverflow.body.error).toBe("NOT_FOUND");
+
+      const hugeSub = await request(app)
+        .post(`/api/milestones/${openMilestoneId}/submissions`)
+        .set("Cookie", studentJingCookie)
+        .send({
+          title: "Huge payload submission",
+          description: "x".repeat(80000),
+          artifactUrl: "https://example.com/huge",
+        });
+      expect(hugeSub.status).toBe(413);
+      expect(hugeSub.body.error).toBe("PAYLOAD_TOO_LARGE");
+    });
   });
 });

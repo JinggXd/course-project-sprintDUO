@@ -55,7 +55,7 @@ export function createApp(options: CreateAppOptions = {}): Express {
     }),
   );
 
-  instance.use(express.json({ limit: "16kb" }));
+  instance.use(express.json({ limit: "64kb" }));
 
   // Hydrate session and user
   instance.use(sessionMiddleware);
@@ -107,9 +107,28 @@ export function createApp(options: CreateAppOptions = {}): Express {
 
   // Error handler
   instance.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
+    const status = typeof err?.status === "number" ? err.status : err?.statusCode;
+    const errType = err?.type;
+
+    if (errType === "entity.too.large" || status === 413) {
+      res.status(413).json({
+        error: "PAYLOAD_TOO_LARGE",
+        message: "Request payload exceeds the maximum allowed size (64 KB)",
+      });
+      return;
+    }
+
+    if (errType === "entity.parse.failed" || (err instanceof SyntaxError && status === 400)) {
+      res.status(400).json({
+        error: "VALIDATION_ERROR",
+        message: "Malformed JSON request body",
+      });
+      return;
+    }
+
     res.status(500).json({
       error: "INTERNAL_ERROR",
-      message: err?.message || "An unexpected error occurred",
+      message: "An unexpected error occurred",
     });
   });
 
