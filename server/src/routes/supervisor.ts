@@ -1,7 +1,11 @@
 import { Router, Request, Response } from "express";
 import { getPrisma } from "../prisma.js";
 import { requireAuth, requireRole } from "../middleware/sessionAuth.js";
-import { validateMilestoneInput, validateFeedbackInput } from "../utils/validation.js";
+import {
+  parsePositiveIntId,
+  validateMilestoneInput,
+  validateFeedbackInput,
+} from "../utils/validation.js";
 
 export const supervisorRouter = Router();
 
@@ -58,9 +62,9 @@ supervisorRouter.get("/teams", requireAuth, async (req: Request, res: Response):
 // GET /api/teams/:teamId/milestones (BR-01 Scope Check)
 // ---------------------------------------------------------------------------
 supervisorRouter.get("/teams/:teamId/milestones", requireAuth, async (req: Request, res: Response): Promise<void> => {
-  const teamId = parseInt(req.params.teamId, 10);
-  if (isNaN(teamId)) {
-    res.status(400).json({ error: "VALIDATION_ERROR", message: "Invalid team ID" });
+  const teamId = parsePositiveIntId(req.params.teamId);
+  if (teamId === null) {
+    res.status(404).json({ error: "NOT_FOUND", message: "Team not found" });
     return;
   }
 
@@ -136,9 +140,9 @@ supervisorRouter.post(
   requireAuth,
   requireRole("SUPERVISOR"),
   async (req: Request, res: Response): Promise<void> => {
-    const teamId = parseInt(req.params.teamId, 10);
-    if (isNaN(teamId)) {
-      res.status(400).json({ error: "VALIDATION_ERROR", message: "Invalid team ID" });
+    const teamId = parsePositiveIntId(req.params.teamId);
+    if (teamId === null) {
+      res.status(404).json({ error: "NOT_FOUND", message: "Team not found" });
       return;
     }
 
@@ -199,9 +203,9 @@ supervisorRouter.post(
   requireAuth,
   requireRole("SUPERVISOR"),
   async (req: Request, res: Response): Promise<void> => {
-    const submissionId = parseInt(req.params.id, 10);
-    if (isNaN(submissionId)) {
-      res.status(400).json({ error: "VALIDATION_ERROR", message: "Invalid submission ID" });
+    const submissionId = parsePositiveIntId(req.params.id);
+    if (submissionId === null) {
+      res.status(404).json({ error: "NOT_FOUND", message: "Submission not found" });
       return;
     }
 

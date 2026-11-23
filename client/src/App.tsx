@@ -102,9 +102,23 @@ export function App() {
     }
   }
 
+  function resetTransientFormAndAlertState() {
+    setError(null);
+    setSuccess(null);
+    setNewTitle("");
+    setNewDesc("");
+    setNewDueDate("");
+    setSubTitle({});
+    setSubDesc({});
+    setSubUrl({});
+    setFeedbackComment({});
+    setFeedbackStatus({});
+  }
+
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+    setSuccess(null);
     try {
       const res = await fetch("/api/auth/login", {
         method: "POST",
@@ -116,6 +130,7 @@ export function App() {
         setError(data.message || "Invalid email or password");
         return;
       }
+      resetTransientFormAndAlertState();
       setCurrentUser(data.user);
       setEmail("");
       setPassword("");
@@ -129,7 +144,10 @@ export function App() {
     try {
       await fetch("/api/auth/logout", { method: "POST" });
     } finally {
+      resetTransientFormAndAlertState();
       setCurrentUser(null);
+      setEmail("");
+      setPassword("");
       setTeams([]);
       setSelectedTeam(null);
       setMilestones([]);
