@@ -23,6 +23,14 @@ authRouter.post("/login", async (req: Request, res: Response): Promise<void> => 
     return;
   }
 
+  if (email.includes("\u0000")) {
+    res.status(401).json({
+      error: "INVALID_CREDENTIALS",
+      message: "Invalid email or password",
+    });
+    return;
+  }
+
   try {
     const prisma = getPrisma();
     const user = await prisma.user.findUnique({

@@ -1,3 +1,21 @@
+export const PG_INT4_MAX = 2147483647;
+
+/**
+ * Strictly parse a canonical positive 32-bit PostgreSQL integer ID (1..2147483647).
+ * Rejects overflow values (>= 2147483648), non-canonical strings (1e0, +1, 0x1, 1abc),
+ * leading zeros, negatives, and zero.
+ */
+export function parsePositiveIntId(raw: string | undefined): number | null {
+  if (!raw || !/^[1-9]\d*$/.test(raw)) {
+    return null;
+  }
+  const parsed = Number(raw);
+  if (!Number.isSafeInteger(parsed) || parsed < 1 || parsed > PG_INT4_MAX) {
+    return null;
+  }
+  return parsed;
+}
+
 export function isDeadlinePassed(dueDate: Date | string, now: Date = new Date()): boolean {
   const due = typeof dueDate === "string" ? new Date(dueDate) : dueDate;
   return now.getTime() > due.getTime();

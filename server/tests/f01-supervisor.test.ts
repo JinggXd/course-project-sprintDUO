@@ -265,5 +265,37 @@ describe("F-01 Auth and Supervisor Workflow (TEST-01, TEST-02, TEST-05, TEST-06)
       expect(res.status).toBe(403);
       expect(res.body.error).toBeDefined();
     });
+
+    it("DEF-SD-01 & DEF-SD-04 (PostgreSQL integration): rejects INT4 overflow IDs with 404 and 80k-char payloads with 413", async () => {
+      const msOverflow = await request(app)
+        .post("/api/teams/2147483648/milestones")
+        .set("Cookie", advisor1Cookie)
+        .send({
+          title: "Overflow Milestone",
+          description: "Valid description for overflow team id",
+          dueDate: new Date(Date.now() + 86400000).toISOString(),
+        });
+      expect(msOverflow.status).toBe(404);
+      expect(msOverflow.body.error).toBe("NOT_FOUND");
+
+      const fbOverflow = await request(app)
+        .post("/api/submissions/2147483648/feedback")
+        .set("Cookie", advisor1Cookie)
+        .send({ comment: "Valid feedback", status: "APPROVED" });
+      expect(fbOverflow.status).toBe(404);
+      expect(fbOverflow.body.error).toBe("NOT_FOUND");
+
+      const nonCanonical = await request(app)
+        .get("/api/teams/1e0/milestones")
+        .set("Cookie", advisor1Cookie);
+      expect(nonCanonical.status).toBe(404);
+      expect(nonCanonical.body.error).toBe("NOT_FOUND");
+
+      const hugeLogin = await request(app)
+        .post("/api/auth/login")
+        .send({ email: "sup.advisor1@sprintduo.edu", password: "x".repeat(80000) });
+      expect(hugeLogin.status).toBe(413);
+      expect(hugeLogin.body.error).toBe("PAYLOAD_TOO_LARGE");
+    });
   });
 });
