@@ -360,4 +360,77 @@ describe("SprintDUO Client UI — TEST-03 & TEST-04 Student Submission & Persist
     expect(screen.getByPlaceholderText("Milestone Title")).toHaveValue("");
     expect(screen.getByPlaceholderText("Detailed milestone requirements and description...")).toHaveValue("");
   });
+
+  // ---------------------------------------------------------------------------
+  // Lab 7 BR-03 v1.1.0 — 24-Hour Late Grace Period & LATE Badge (TEST-07 UI)
+  // ---------------------------------------------------------------------------
+  it("TEST-07 (Lab 7 BR-03 v1.1.0): displays GRACE PERIOD (24H) milestone badge and LATE badge on late submission", async () => {
+    const graceDue = new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString();
+    let milestonesState = [
+      {
+        id: 103,
+        title: "Milestone Grace Window (12h Past Due)",
+        description: "Submit within 24-hour late grace window.",
+        dueDate: graceDue,
+        submissions: [] as any[],
+      },
+    ];
+
+    globalThis.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input.toString();
+      const method = init?.method || "GET";
+
+      if (url === "/api/auth/me") {
+        return { ok: true, status: 200, json: async () => ({ user: mockStudent }) } as Response;
+      }
+      if (url === "/api/teams") {
+        return { ok: true, status: 200, json: async () => ({ teams: [mockTeam] }) } as Response;
+      }
+      if (url === "/api/teams/1/milestones") {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ team: mockTeam, milestones: milestonesState }),
+        } as Response;
+      }
+      if (url === "/api/milestones/103/submissions" && method === "POST") {
+        const body = JSON.parse(init?.body as string);
+        const createdSub = {
+          id: 601,
+          milestoneId: 103,
+          submittedById: mockStudent.id,
+          title: body.title,
+          description: body.description,
+          artifactUrl: body.artifactUrl,
+          status: "SUBMITTED",
+          isLate: true,
+          submittedAt: new Date().toISOString(),
+          submittedBy: mockStudent,
+          feedbacks: [],
+        };
+        milestonesState = milestonesState.map((m) =>
+          m.id === 103 ? { ...m, submissions: [createdSub] } : m,
+        );
+        return {
+          ok: true,
+          status: 201,
+          json: async () => ({ submission: createdSub }),
+        } as Response;
+      }
+      return { ok: false, status: 404, json: async () => ({}) } as Response;
+    }) as any;
+
+    const user = userEvent.setup();
+    render(<App />);
+
+    expect(await screen.findByText("GRACE PERIOD (24H)")).toBeInTheDocument();
+
+    await user.type(await screen.findByTestId("submission-title-103"), "Late Grace Submission");
+    await user.type(screen.getByTestId("submission-url-103"), "https://github.com/JinggXd/course-project-sprintDUO");
+    await user.type(screen.getByTestId("submission-desc-103"), "Submitted 12 hours into the 24-hour grace period.");
+    await user.click(screen.getByTestId("submission-submit-103"));
+
+    expect(await screen.findByText("Late Grace Submission")).toBeInTheDocument();
+    expect(await screen.findByTestId("submission-late-badge-601")).toHaveTextContent("LATE");
+  });
 });
