@@ -36,10 +36,13 @@ interface Submission {
   description: string;
   artifactUrl: string;
   status: "SUBMITTED" | "APPROVED" | "CHANGES_REQUESTED";
+  isLate?: boolean;
   submittedAt: string;
   submittedBy?: { id: number; name: string; email: string };
   feedbacks: Feedback[];
 }
+
+const LATE_GRACE_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 interface Milestone {
   id: number;
@@ -481,7 +484,20 @@ export function App() {
         ) : (
           <div className="row g-4">
             {milestones.map((ms) => {
-              const isPastDue = new Date() > new Date(ms.dueDate);
+              const nowMs = Date.now();
+              const dueMs = new Date(ms.dueDate).getTime();
+              const isPastCutoff = nowMs > dueMs + LATE_GRACE_WINDOW_MS;
+              const isInGraceWindow = nowMs > dueMs && !isPastCutoff;
+              const dueBadgeClass = isPastCutoff
+                ? "bg-danger"
+                : isInGraceWindow
+                ? "bg-warning text-dark"
+                : "bg-success";
+              const dueBadgeLabel = isPastCutoff
+                ? "PAST DUE"
+                : isInGraceWindow
+                ? "GRACE PERIOD (24H)"
+                : "OPEN";
               return (
                 <div key={ms.id} className="col-12">
                   <div className="card shadow-sm border-0">
@@ -492,8 +508,8 @@ export function App() {
                           Due: {new Date(ms.dueDate).toLocaleString()}
                         </small>
                       </div>
-                      <span className={`badge ${isPastDue ? "bg-danger" : "bg-success"}`}>
-                        {isPastDue ? "PAST DUE" : "OPEN"}
+                      <span className={`badge ${dueBadgeClass}`}>
+                        {dueBadgeLabel}
                       </span>
                     </div>
                     <div className="card-body">
@@ -567,17 +583,27 @@ export function App() {
                           <div key={sub.id} className="border rounded p-3 mb-3 bg-light">
                             <div className="d-flex justify-content-between align-items-center mb-2">
                               <strong>{sub.title}</strong>
-                              <span
-                                className={`badge ${
-                                  sub.status === "APPROVED"
-                                    ? "bg-success"
-                                    : sub.status === "CHANGES_REQUESTED"
-                                    ? "bg-warning text-dark"
-                                    : "bg-primary"
-                                }`}
-                              >
-                                {sub.status}
-                              </span>
+                              <div className="d-flex align-items-center gap-2">
+                                {sub.isLate && (
+                                  <span
+                                    className="badge bg-warning text-dark"
+                                    data-testid={`submission-late-badge-${sub.id}`}
+                                  >
+                                    LATE
+                                  </span>
+                                )}
+                                <span
+                                  className={`badge ${
+                                    sub.status === "APPROVED"
+                                      ? "bg-success"
+                                      : sub.status === "CHANGES_REQUESTED"
+                                      ? "bg-warning text-dark"
+                                      : "bg-primary"
+                                  }`}
+                                >
+                                  {sub.status}
+                                </span>
+                              </div>
                             </div>
                             <p className="small mb-2">{sub.description}</p>
                             <p className="small mb-2">
