@@ -42,7 +42,7 @@ University course supervision programs require student teams to submit milestone
 | :--- | :--- | :---: |
 | **BR-01** | **Team & Supervision Scope Isolation:** A `STUDENT` may only access teams where they are a registered member (`TeamMember`). A `SUPERVISOR` may only access teams where `team.supervisorId === user.id`. Cross-team requests return HTTP `403`. | Sprint 1 |
 | **BR-02** | **Role Separation of Duties:** Only a `SUPERVISOR` may create milestones or record feedback. Only a `STUDENT` may create a milestone submission. Role violations return HTTP `403`. | Sprint 1 |
-| **BR-03** | **Deadline & Input Validation Rule:** A student cannot submit work to a milestone whose `dueDate` has already passed (`serverNow > milestone.dueDate` -> HTTP `400 DEADLINE_PASSED`), and `artifactUrl` must be a valid `http://` or `https://` URL. | Sprint 1 |
+| **BR-03** | **Deadline, 24-Hour Grace Window & Input Validation Rule (`v1.1.0`, Lab 7 Issue #36):** Submissions at or before `milestone.dueDate` (`serverNow <= dueDate`) are accepted on time (`201`, `isLate: false`). Submissions within the 24-hour grace window (`dueDate < serverNow <= dueDate + 24h`) are accepted and flagged late (`201`, `isLate: true`). Submissions strictly after `dueDate + 24h` (`serverNow > dueDate + 24h`) are rejected with HTTP `400 DEADLINE_PASSED` and zero record stored. `artifactUrl` must be a valid `http://` or `https://` URL. | Sprint 1 (revised in Lab 7 `v1.1.0`) |
 | **BR-04** | **Revision History Preservation:** Resubmissions in Sprint 2 preserve prior submission records and associated supervisor feedback without overwriting history. | Sprint 2 |
 
 ---
@@ -62,6 +62,15 @@ University course supervision programs require student teams to submit milestone
 | ID | Topic / Theme 6 Question | Assumption / Decision & Resolution |
 | :--- | :--- | :--- |
 | **DD-01** | **Team Membership & Supervision Scope** | **Assumption & Decision:** Teams (2–4 students) and supervisor assignments are pre-seeded in the database (`TeamMember` and `Team.supervisorId`). Students cannot switch teams, and supervisors only manage their assigned teams (`BR-01`). |
-| **DD-02** | **Deadline Policy (`BR-03`)** | **Question:** Should submissions after `dueDate` be blocked or flagged late?<br>**Resolution:** Strictly block submissions after `milestone.dueDate` with HTTP `400 DEADLINE_PASSED` using the server's clock. Supervisors can extend `dueDate` in Sprint 2 (`FR-05`). |
+| **DD-02** | **Deadline Policy (`BR-03`)** | **Question:** Should submissions after `dueDate` be blocked or flagged late?<br>**Original Sprint 1 Resolution (`v1.0.0`):** Strictly block submissions immediately after `milestone.dueDate` (`serverNow > dueDate` -> HTTP `400 DEADLINE_PASSED`).<br>**Revised Resolution (`v1.1.0`, Lab 7 Issue #36):** Allow a bounded **24-hour late grace window** (`dueDate < serverNow <= dueDate + 24h`) where submissions are accepted and persisted with `isLate = true` (`LATE` badge in UI), while strictly blocking submissions after `dueDate + 24h` with HTTP `400 DEADLINE_PASSED`. Supervisors can still extend `dueDate` in Sprint 2 (`FR-05`). |
 | **DD-03** | **Revision Policy & Feedback Visibility** | **Question:** When can students resubmit, and who may view feedback?<br>**Resolution:** In Sprint 1, each milestone accepts one submission (`SUBMITTED`) which the supervisor evaluates (`APPROVED` or `CHANGES_REQUESTED`). Full multi-version resubmission history after `CHANGES_REQUESTED` is delivered in Sprint 2 (`BR-04`). Feedback is visible only to members of that team and the assigned supervisor (`BR-01`). |
 | **DD-04** | **Artifact Storage Format** | **Decision:** Submissions store validated `http://` or `https://` URLs (e.g., GitHub release or document link) rather than binary file uploads, keeping the container stateless for GCP deployment in Lab 5. |
+
+---
+
+## 6. Revision History
+
+| Version | Date | Author(s) | Summary of Change |
+| :--- | :--- | :--- | :--- |
+| `1.0.0` | 2026-11-04 | `JinggXd`, `yuminnini` | Initial Sprint 1–3 SRS baseline (`FR-01`–`FR-06`, `BR-01`–`BR-04`, `NFR-01`–`NFR-03`). |
+| `1.1.0` | 2026-11-25 | `JinggXd` (reviewed by `yuminnini`) | Lab 7 Issue `#36`: Revised `BR-03` and `DD-02` from strict cutoff at `dueDate` to a 24-hour late grace window (`dueDate < serverNow <= dueDate + 24h` accepted with `isLate: true`; strictly `> dueDate + 24h` rejected with `400 DEADLINE_PASSED`). |

@@ -71,6 +71,7 @@ erDiagram
         string description
         string artifactUrl
         enum status "SUBMITTED | APPROVED | CHANGES_REQUESTED"
+        boolean isLate "default false (Lab 7 BR-03 v1.1.0)"
         datetime submittedAt
     }
     Feedback {
@@ -132,3 +133,13 @@ All permissions are enforced server-side in Express middleware and route handler
 ## 3. Configuration and GCP Deployment Design (Lab 5)
 - Configured via environment variables (`DATABASE_URL`, `DATABASE_URL_TEST`, `PORT`, `CLIENT_ORIGIN`); `.env` is gitignored so real secrets never enter Git or client bundles.
 - **Planned GCP Setup (Lab 5):** Stateless Docker container deployed to **Google Cloud Run**, connected to **Cloud SQL for PostgreSQL** for durable storage, with secrets injected via **Google Secret Manager**.
+- **Lab 7 Additive Schema Migration (`v1.1.0`):** `ALTER TABLE "Submission" ADD COLUMN "isLate" BOOLEAN NOT NULL DEFAULT false;` applied automatically via Prisma migrate (`sprintduo-migrate`) without mutating historical Sprint 1 / Lab 5 / Lab 6 submissions (all preserve `isLate = false`).
+
+---
+
+## 4. Revision History
+
+| Version | Date | Author(s) | Summary of Change |
+| :--- | :--- | :--- | :--- |
+| `1.0.0` | 2026-11-04 | `JinggXd`, `yuminnini` | Initial System-Level SDS baseline for Sprint 1 (`v1.0.0`). |
+| `1.1.0` | 2026-11-25 | `JinggXd` (reviewed by `yuminnini`) | Lab 7 Issue `#36`: Added `Submission.isLate` (`BOOLEAN NOT NULL DEFAULT false`) to ERD and migration specification; UI displays `GRACE PERIOD (24H)` on milestones within 24h after `dueDate` and `LATE` badge on late submissions. |
