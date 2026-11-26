@@ -3,7 +3,7 @@ import { getPrisma } from "../prisma.js";
 import { requireAuth, requireRole } from "../middleware/sessionAuth.js";
 import {
   parsePositiveIntId,
-  isDeadlinePassed,
+  evaluateSubmissionDeadline,
   validateSubmissionInput,
 } from "../utils/validation.js";
 
@@ -51,11 +51,12 @@ studentRouter.post(
         return;
       }
 
-      // BR-03: Deadline enforcement rule (serverNow > milestone.dueDate -> 400 DEADLINE_PASSED)
-      if (isDeadlinePassed(milestone.dueDate)) {
+      // BR-03 v1.1.0 (Lab 7 Issue #36): 24-hour late grace window evaluation
+      const deadlineCheck = evaluateSubmissionDeadline(milestone.dueDate);
+      if (!deadlineCheck.isAllowed) {
         res.status(400).json({
           error: "DEADLINE_PASSED",
-          message: "Milestone deadline has passed",
+          message: "Milestone deadline has passed (24-hour grace window expired)",
         });
         return;
       }
@@ -79,6 +80,7 @@ studentRouter.post(
           description: validation.data!.description,
           artifactUrl: validation.data!.artifactUrl,
           status: "SUBMITTED",
+          isLate: deadlineCheck.isLate,
         },
         include: {
           submittedBy: { select: { id: true, name: true, email: true } },
@@ -157,6 +159,7 @@ studentRouter.get(
           description: submission.description,
           artifactUrl: submission.artifactUrl,
           status: submission.status,
+          isLate: submission.isLate,
           submittedAt: submission.submittedAt,
           updatedAt: submission.updatedAt,
           submittedBy: submission.submittedBy,

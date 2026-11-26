@@ -16,9 +16,40 @@ export function parsePositiveIntId(raw: string | undefined): number | null {
   return parsed;
 }
 
+export const LATE_GRACE_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+export type SubmissionDeadlineStatus = "ON_TIME" | "LATE_GRACE" | "CUTOFF_PASSED";
+
+export interface SubmissionDeadlineEvaluation {
+  status: SubmissionDeadlineStatus;
+  isLate: boolean;
+  isAllowed: boolean;
+}
+
 export function isDeadlinePassed(dueDate: Date | string, now: Date = new Date()): boolean {
   const due = typeof dueDate === "string" ? new Date(dueDate) : dueDate;
   return now.getTime() > due.getTime();
+}
+
+/**
+ * BR-03 v1.1.0 (Lab 7 Issue #36):
+ * - now <= dueDate                  -> ON_TIME (allowed, isLate: false)
+ * - dueDate < now <= dueDate + 24h  -> LATE_GRACE (allowed, isLate: true)
+ * - now > dueDate + 24h             -> CUTOFF_PASSED (rejected 400 DEADLINE_PASSED)
+ */
+export function evaluateSubmissionDeadline(
+  dueDate: Date | string,
+  now: Date = new Date(),
+): SubmissionDeadlineEvaluation {
+  const due = typeof dueDate === "string" ? new Date(dueDate) : dueDate;
+  const elapsedMs = now.getTime() - due.getTime();
+  if (elapsedMs <= 0) {
+    return { status: "ON_TIME", isLate: false, isAllowed: true };
+  }
+  if (elapsedMs <= LATE_GRACE_WINDOW_MS) {
+    return { status: "LATE_GRACE", isLate: true, isAllowed: true };
+  }
+  return { status: "CUTOFF_PASSED", isLate: true, isAllowed: false };
 }
 
 export function validateMilestoneInput(body: any): {
