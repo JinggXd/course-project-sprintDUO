@@ -186,12 +186,66 @@ describe("F-02 Student Team View, Submission & Deadline Rule (TEST-03, TEST-04, 
 
       expect(res.status).toBe(400);
       expect(res.body.error).toBe("DEADLINE_PASSED");
-      expect(res.body.message).toBe("Milestone deadline has passed");
+      // Revised in Lab 7 (BR-03 v1.1.0, Issue #36): clarifies 24-hour grace cutoff expiration
+      expect(res.body.message).toBe(
+        "Milestone deadline has passed (24-hour grace window expired)",
+      );
 
       const countAfter = await prisma.submission.count({
         where: { milestoneId: pastDueMilestoneId },
       });
       expect(countAfter).toBe(countBefore);
+    });
+
+    it("TEST-07 (Lab 7 BR-03 v1.1.0): accepts submission inside 24-hour grace window with persisted isLate=true while preserving 403 isolation", async () => {
+      const graceDueDate = new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString();
+      const msCreate = await request(app)
+        .post(`/api/teams/${alphaTeamId}/milestones`)
+        .set("Cookie", advisor1Cookie)
+        .send({
+          title: "Lab 7 Grace Window Milestone",
+          description: "Milestone due 12 hours ago (inside 24h late grace window)",
+          dueDate: graceDueDate,
+        });
+      expect(msCreate.status).toBe(201);
+      const graceMilestoneId = msCreate.body.milestone.id;
+
+      // Cross-team student (Team Beta) still rejected 403 during grace window
+      const betaAttempt = await request(app)
+        .post(`/api/milestones/${graceMilestoneId}/submissions`)
+        .set("Cookie", studentBetaCookie)
+        .send({
+          title: "Cross-Team Grace Attempt",
+          description: "Foreign student attempting submission in grace window",
+          artifactUrl: "https://example.com/beta-grace",
+        });
+      expect(betaAttempt.status).toBe(403);
+
+      // Team Alpha student accepted with 201 and isLate: true
+      const lateRes = await request(app)
+        .post(`/api/milestones/${graceMilestoneId}/submissions`)
+        .set("Cookie", studentJingCookie)
+        .send({
+          title: "Grace Window Late Deliverable",
+          description: "Submitted 12 hours past dueDate within 24h grace window",
+          artifactUrl: "https://github.com/JinggXd/course-project-sprintDUO",
+        });
+      expect(lateRes.status).toBe(201);
+      expect(lateRes.body.submission.isLate).toBe(true);
+      const lateSubId = lateRes.body.submission.id;
+
+      // Persisted retrieval returns isLate: true, while earlier on-time submission returns isLate: false
+      const getLate = await request(app)
+        .get(`/api/submissions/${lateSubId}`)
+        .set("Cookie", studentJingCookie);
+      expect(getLate.status).toBe(200);
+      expect(getLate.body.submission.isLate).toBe(true);
+
+      const getOnTime = await request(app)
+        .get(`/api/submissions/${createdSubmissionId}`)
+        .set("Cookie", studentJingCookie);
+      expect(getOnTime.status).toBe(200);
+      expect(getOnTime.body.submission.isLate).toBe(false);
     });
 
     it("rejects submission with an invalid artifactUrl with HTTP 400 VALIDATION_ERROR", async () => {

@@ -99,6 +99,7 @@ model Submission {
   description   String
   artifactUrl   String
   status        SubmissionStatus @default(SUBMITTED)
+  isLate        Boolean          @default(false)
   submittedAt   DateTime         @default(now())
   updatedAt     DateTime         @updatedAt
 
