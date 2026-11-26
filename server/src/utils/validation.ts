@@ -87,6 +87,123 @@ export function validateMilestoneInput(body: any): {
   };
 }
 
+export const MILESTONE_STATUS_FILTERS = [
+  "ALL",
+  "NOT_STARTED",
+  "SUBMITTED",
+  "CHANGES_REQUESTED",
+  "APPROVED",
+  "LOCKED",
+] as const;
+
+export type MilestoneStatusFilter = (typeof MILESTONE_STATUS_FILTERS)[number];
+
+export function parseMilestoneStatusFilter(raw: unknown): {
+  isValid: boolean;
+  filter: MilestoneStatusFilter;
+  error?: string;
+} {
+  if (raw === undefined || raw === null || raw === "") {
+    return { isValid: true, filter: "ALL" };
+  }
+  if (typeof raw !== "string") {
+    return {
+      isValid: false,
+      filter: "ALL",
+      error: `Status filter must be one of: ${MILESTONE_STATUS_FILTERS.join(", ")}`,
+    };
+  }
+  const normalized = raw.trim().toUpperCase();
+  if ((MILESTONE_STATUS_FILTERS as readonly string[]).includes(normalized)) {
+    return { isValid: true, filter: normalized as MilestoneStatusFilter };
+  }
+  return {
+    isValid: false,
+    filter: "ALL",
+    error: `Status filter must be one of: ${MILESTONE_STATUS_FILTERS.join(", ")}`,
+  };
+}
+
+export function validateMilestoneUpdateInput(body: any): {
+  isValid: boolean;
+  errors: Record<string, string>;
+  data?: {
+    title?: string;
+    description?: string;
+    dueDate?: Date;
+    isLocked?: boolean;
+  };
+} {
+  const errors: Record<string, string> = {};
+  const payload = body && typeof body === "object" ? body : {};
+  const data: {
+    title?: string;
+    description?: string;
+    dueDate?: Date;
+    isLocked?: boolean;
+  } = {};
+
+  const hasTitle = payload.title !== undefined;
+  const hasDescription = payload.description !== undefined;
+  const hasDueDate = payload.dueDate !== undefined;
+  const hasIsLocked = payload.isLocked !== undefined;
+
+  if (!hasTitle && !hasDescription && !hasDueDate && !hasIsLocked) {
+    return {
+      isValid: false,
+      errors: {
+        body: "At least one updatable field (title, description, dueDate, isLocked) is required",
+      },
+    };
+  }
+
+  if (hasTitle) {
+    if (
+      typeof payload.title !== "string" ||
+      payload.title.trim().length < 3 ||
+      payload.title.trim().length > 150
+    ) {
+      errors.title = "Title must be between 3 and 150 characters";
+    } else {
+      data.title = payload.title.trim();
+    }
+  }
+
+  if (hasDescription) {
+    if (
+      typeof payload.description !== "string" ||
+      payload.description.trim().length < 5 ||
+      payload.description.trim().length > 2000
+    ) {
+      errors.description = "Description must be between 5 and 2000 characters";
+    } else {
+      data.description = payload.description.trim();
+    }
+  }
+
+  if (hasDueDate) {
+    if (typeof payload.dueDate !== "string" || Number.isNaN(Date.parse(payload.dueDate))) {
+      errors.dueDate = "Valid due date is required";
+    } else {
+      data.dueDate = new Date(payload.dueDate);
+    }
+  }
+
+  if (hasIsLocked) {
+    if (typeof payload.isLocked !== "boolean") {
+      errors.isLocked = "isLocked must be a boolean value";
+    } else {
+      data.isLocked = payload.isLocked;
+    }
+  }
+
+  if (Object.keys(errors).length > 0) {
+    return { isValid: false, errors };
+  }
+
+  return { isValid: true, errors, data };
+}
+
 export function validateFeedbackInput(body: any): {
   isValid: boolean;
   errors: Record<string, string>;

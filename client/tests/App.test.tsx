@@ -147,13 +147,22 @@ describe("SprintDUO Client UI — TEST-03 & TEST-04 Student Submission & Persist
     ).toBeInTheDocument();
   });
 
-  it("TEST-04: displays error alert (role='alert') when submitting to a past-due milestone or with invalid URL", async () => {
+  it("TEST-04: displays error alert (role='alert') when submitting with invalid URL and hides submit form on PAST DUE milestone (#33)", async () => {
     const milestonesState = [
+      {
+        id: 101,
+        title: "Milestone 1: Open Deliverable",
+        description: "Submit valid HTTP/HTTPS artifact URL.",
+        dueDate: futureDue,
+        isLocked: false,
+        submissions: [],
+      },
       {
         id: 102,
         title: "Milestone 0: Initial Project Charter (Past Due Demo)",
         description: "Submit initial team formation charter.",
         dueDate: pastDue,
+        isLocked: false,
         submissions: [],
       },
     ];
@@ -168,20 +177,21 @@ describe("SprintDUO Client UI — TEST-03 & TEST-04 Student Submission & Persist
       if (url === "/api/teams") {
         return { ok: true, status: 200, json: async () => ({ teams: [mockTeam] }) } as Response;
       }
-      if (url === "/api/teams/1/milestones") {
+      if (url.startsWith("/api/teams/1/milestones")) {
         return {
           ok: true,
           status: 200,
           json: async () => ({ team: mockTeam, milestones: milestonesState }),
         } as Response;
       }
-      if (url === "/api/milestones/102/submissions" && method === "POST") {
+      if (url === "/api/milestones/101/submissions" && method === "POST") {
         return {
           ok: false,
           status: 400,
           json: async () => ({
-            error: "DEADLINE_PASSED",
-            message: "Milestone deadline has passed",
+            error: "VALIDATION_ERROR",
+            message: "Validation failed",
+            details: { artifactUrl: "Artifact URL must be a valid HTTP or HTTPS link" },
           }),
         } as Response;
       }
@@ -192,19 +202,22 @@ describe("SprintDUO Client UI — TEST-03 & TEST-04 Student Submission & Persist
     render(<App />);
 
     expect(await screen.findByText("PAST DUE")).toBeInTheDocument();
+    // Lab 6 #33 (DEF-SD-03) resolved in Sprint 2: form hidden on PAST DUE milestone
+    expect(screen.queryByTestId("submission-title-102")).not.toBeInTheDocument();
+    expect(screen.getByTestId("milestone-closed-notice-102")).toHaveTextContent(/grace window expired/i);
 
-    const titleInput = await screen.findByTestId("submission-title-102");
-    const urlInput = screen.getByTestId("submission-url-102");
-    const descInput = screen.getByTestId("submission-desc-102");
-    const submitBtn = screen.getByTestId("submission-submit-102");
+    const titleInput = await screen.findByTestId("submission-title-101");
+    const urlInput = screen.getByTestId("submission-url-101");
+    const descInput = screen.getByTestId("submission-desc-101");
+    const submitBtn = screen.getByTestId("submission-submit-101");
 
-    await user.type(titleInput, "Late Submission Attempt");
-    await user.type(urlInput, "https://github.com/JinggXd/course-project-sprintDUO");
-    await user.type(descInput, "Attempting late submission");
+    await user.type(titleInput, "Invalid Link Attempt");
+    await user.type(urlInput, "ftp://invalid-url");
+    await user.type(descInput, "Testing validation error alert");
     await user.click(submitBtn);
 
     const alert = await screen.findByRole("alert");
-    expect(alert).toHaveTextContent(/Milestone deadline has passed/i);
+    expect(alert).toHaveTextContent(/Artifact URL must be a valid HTTP or HTTPS link/i);
   });
 
   // ---------------------------------------------------------------------------
@@ -213,10 +226,11 @@ describe("SprintDUO Client UI — TEST-03 & TEST-04 Student Submission & Persist
   it("DEF-SD-02: clears previous user error and success alerts on Log Out and next Sign In", async () => {
     const milestonesState = [
       {
-        id: 102,
-        title: "Milestone 0: Initial Project Charter (Past Due Demo)",
-        description: "Submit initial team formation charter.",
-        dueDate: pastDue,
+        id: 101,
+        title: "Milestone 1: Open Deliverable",
+        description: "Submit valid deliverable link.",
+        dueDate: futureDue,
+        isLocked: false,
         submissions: [],
       },
     ];
@@ -249,20 +263,20 @@ describe("SprintDUO Client UI — TEST-03 & TEST-04 Student Submission & Persist
       if (url === "/api/teams") {
         return { ok: true, status: 200, json: async () => ({ teams: [mockTeam] }) } as Response;
       }
-      if (url === "/api/teams/1/milestones") {
+      if (url.startsWith("/api/teams/1/milestones")) {
         return {
           ok: true,
           status: 200,
           json: async () => ({ team: mockTeam, milestones: milestonesState }),
         } as Response;
       }
-      if (url === "/api/milestones/102/submissions" && method === "POST") {
+      if (url === "/api/milestones/101/submissions" && method === "POST") {
         return {
           ok: false,
           status: 400,
           json: async () => ({
-            error: "DEADLINE_PASSED",
-            message: "Milestone deadline has passed",
+            error: "VALIDATION_ERROR",
+            message: "Artifact URL must be a valid HTTP or HTTPS link",
           }),
         } as Response;
       }
@@ -273,11 +287,11 @@ describe("SprintDUO Client UI — TEST-03 & TEST-04 Student Submission & Persist
     render(<App />);
 
     // Trigger error alert as Student-Alpha-1
-    await user.type(await screen.findByTestId("submission-title-102"), "Late Draft");
-    await user.type(screen.getByTestId("submission-url-102"), "https://example.com/late");
-    await user.type(screen.getByTestId("submission-desc-102"), "Late submission body");
-    await user.click(screen.getByTestId("submission-submit-102"));
-    expect(await screen.findByRole("alert")).toHaveTextContent(/Milestone deadline has passed/i);
+    await user.type(await screen.findByTestId("submission-title-101"), "Bad URL Draft");
+    await user.type(screen.getByTestId("submission-url-101"), "ftp://bad");
+    await user.type(screen.getByTestId("submission-desc-101"), "Bad URL submission body");
+    await user.click(screen.getByTestId("submission-submit-101"));
+    expect(await screen.findByRole("alert")).toHaveTextContent(/Artifact URL must be a valid HTTP or HTTPS link/i);
 
     // Log Out -> Sign In screen MUST NOT retain previous user's error alert
     await user.click(screen.getByTestId("logout-btn"));
@@ -432,5 +446,248 @@ describe("SprintDUO Client UI — TEST-03 & TEST-04 Student Submission & Persist
 
     expect(await screen.findByText("Late Grace Submission")).toBeInTheDocument();
     expect(await screen.findByTestId("submission-late-badge-601")).toHaveTextContent("LATE");
+  });
+
+  // ---------------------------------------------------------------------------
+  // Sprint 2 F-03a & F-03b Client RTL Tests (TEST-09, TEST-10, TEST-11 & TD-02)
+  // ---------------------------------------------------------------------------
+  it("TEST-09 (Sprint 2 F-03a): supervisor edits/locks a milestone and locked milestone hides student submit form", async () => {
+    const mockSup = {
+      id: 1,
+      name: "Dr. Kittipong (Advisor 1)",
+      email: "sup.advisor1@sprintduo.edu",
+      role: "SUPERVISOR",
+    };
+
+    let milestonesState = [
+      {
+        id: 201,
+        title: "Milestone Sprint 2 Editable",
+        description: "Initial description before supervisor edit",
+        dueDate: futureDue,
+        isLocked: false,
+        submissions: [] as any[],
+      },
+    ];
+
+    globalThis.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input.toString();
+      const method = init?.method || "GET";
+
+      if (url === "/api/auth/me") {
+        return { ok: true, status: 200, json: async () => ({ user: mockSup }) } as Response;
+      }
+      if (url === "/api/teams") {
+        return { ok: true, status: 200, json: async () => ({ teams: [mockTeam] }) } as Response;
+      }
+      if (url.startsWith("/api/teams/1/milestones")) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ team: mockTeam, milestones: milestonesState }),
+        } as Response;
+      }
+      if (url === "/api/milestones/201" && method === "PATCH") {
+        const body = JSON.parse(init?.body as string);
+        milestonesState = milestonesState.map((m) =>
+          m.id === 201 ? { ...m, ...body } : m,
+        );
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ milestone: milestonesState[0] }),
+        } as Response;
+      }
+      return { ok: false, status: 404, json: async () => ({}) } as Response;
+    }) as any;
+
+    const user = userEvent.setup();
+    render(<App />);
+
+    expect(await screen.findByText("Milestone Sprint 2 Editable")).toBeInTheDocument();
+    await user.click(screen.getByTestId("milestone-edit-toggle-201"));
+
+    const editTitle = screen.getByTestId("milestone-edit-title-201");
+    await user.clear(editTitle);
+    await user.type(editTitle, "Milestone Sprint 2 Locked & Updated");
+    await user.click(screen.getByTestId("milestone-edit-lock-201"));
+    await user.click(screen.getByTestId("milestone-edit-save-201"));
+
+    expect(await screen.findByText("Milestone Sprint 2 Locked & Updated")).toBeInTheDocument();
+    expect(await screen.findByTestId("milestone-locked-badge-201")).toHaveTextContent("LOCKED");
+  });
+
+  it("TEST-10 (Sprint 2 F-03a): filters milestones via status filter bar and requests ?status=...", async () => {
+    const allMilestones = [
+      {
+        id: 210,
+        title: "Milestone Approved Item",
+        description: "Approved work",
+        dueDate: futureDue,
+        isLocked: false,
+        submissions: [
+          {
+            id: 710,
+            title: "Sub Approved",
+            description: "Approved desc",
+            artifactUrl: "https://example.com/approved",
+            status: "APPROVED",
+            isLate: false,
+            revisionNumber: 1,
+            parentSubmissionId: null,
+            submittedAt: new Date().toISOString(),
+            submittedBy: mockStudent,
+            feedbacks: [],
+          },
+        ],
+      },
+      {
+        id: 211,
+        title: "Milestone Locked Item",
+        description: "Locked work",
+        dueDate: futureDue,
+        isLocked: true,
+        submissions: [],
+      },
+    ];
+
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input.toString();
+      if (url === "/api/auth/me") {
+        return { ok: true, status: 200, json: async () => ({ user: mockStudent }) } as Response;
+      }
+      if (url === "/api/teams") {
+        return { ok: true, status: 200, json: async () => ({ teams: [mockTeam] }) } as Response;
+      }
+      if (url === "/api/teams/1/milestones?status=LOCKED") {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ team: mockTeam, filter: "LOCKED", milestones: [allMilestones[1]] }),
+        } as Response;
+      }
+      if (url.startsWith("/api/teams/1/milestones")) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ team: mockTeam, filter: "ALL", milestones: allMilestones }),
+        } as Response;
+      }
+      return { ok: false, status: 404, json: async () => ({}) } as Response;
+    });
+    globalThis.fetch = fetchMock as any;
+
+    const user = userEvent.setup();
+    render(<App />);
+
+    expect(await screen.findByText("Milestone Approved Item")).toBeInTheDocument();
+    expect(screen.getByText("Milestone Locked Item")).toBeInTheDocument();
+
+    await user.click(screen.getByTestId("milestone-filter-LOCKED"));
+
+    await waitFor(() => {
+      expect(screen.queryByText("Milestone Approved Item")).not.toBeInTheDocument();
+    });
+    expect(screen.getByText("Milestone Locked Item")).toBeInTheDocument();
+    expect(screen.getByTestId("milestone-closed-notice-211")).toHaveTextContent(/locked by supervisor/i);
+  });
+
+  it("TEST-11 (Sprint 2 F-03b, BR-04): allows student resubmission (Rev #2) after CHANGES_REQUESTED while preserving Rev #1 and feedback", async () => {
+    const rev1 = {
+      id: 801,
+      milestoneId: 220,
+      submittedById: mockStudent.id,
+      title: "Deliverable Rev 1",
+      description: "First version submitted",
+      artifactUrl: "https://github.com/JinggXd/course-project-sprintDUO/releases/tag/v1",
+      status: "CHANGES_REQUESTED",
+      isLate: false,
+      revisionNumber: 1,
+      parentSubmissionId: null,
+      submittedAt: new Date().toISOString(),
+      submittedBy: mockStudent,
+      feedbacks: [
+        {
+          id: 910,
+          comment: "Please clarify revision migration steps.",
+          status: "CHANGES_REQUESTED",
+          createdAt: new Date().toISOString(),
+          supervisor: mockTeam.supervisor,
+        },
+      ],
+    };
+
+    let milestonesState = [
+      {
+        id: 220,
+        title: "Milestone Revision Workflow",
+        description: "Supports BR-04 revision history preservation.",
+        dueDate: futureDue,
+        isLocked: false,
+        submissions: [rev1] as any[],
+      },
+    ];
+
+    globalThis.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input.toString();
+      const method = init?.method || "GET";
+
+      if (url === "/api/auth/me") {
+        return { ok: true, status: 200, json: async () => ({ user: mockStudent }) } as Response;
+      }
+      if (url === "/api/teams") {
+        return { ok: true, status: 200, json: async () => ({ teams: [mockTeam] }) } as Response;
+      }
+      if (url.startsWith("/api/teams/1/milestones")) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ team: mockTeam, milestones: milestonesState }),
+        } as Response;
+      }
+      if (url === "/api/milestones/220/submissions" && method === "POST") {
+        const body = JSON.parse(init?.body as string);
+        const rev2 = {
+          id: 802,
+          milestoneId: 220,
+          submittedById: mockStudent.id,
+          title: body.title,
+          description: body.description,
+          artifactUrl: body.artifactUrl,
+          status: "SUBMITTED",
+          isLate: false,
+          revisionNumber: 2,
+          parentSubmissionId: 801,
+          submittedAt: new Date().toISOString(),
+          submittedBy: mockStudent,
+          feedbacks: [],
+        };
+        milestonesState = milestonesState.map((m) =>
+          m.id === 220 ? { ...m, submissions: [rev2, ...m.submissions] } : m,
+        );
+        return { ok: true, status: 201, json: async () => ({ submission: rev2 }) } as Response;
+      }
+      return { ok: false, status: 404, json: async () => ({}) } as Response;
+    }) as any;
+
+    const user = userEvent.setup();
+    render(<App />);
+
+    // Verify Rev #1 and its CHANGES_REQUESTED feedback + "Submit Revision (Rev #2)" heading
+    expect(await screen.findByTestId("submission-rev-badge-801")).toHaveTextContent("Rev #1");
+    expect(screen.getByText("Please clarify revision migration steps.")).toBeInTheDocument();
+    expect(screen.getByText(/Submit Revision \(Rev #2\)/i)).toBeInTheDocument();
+
+    // Submit Rev #2
+    await user.type(screen.getByTestId("submission-title-220"), "Deliverable Rev 2");
+    await user.type(screen.getByTestId("submission-url-220"), "https://github.com/JinggXd/course-project-sprintDUO/releases/tag/v2");
+    await user.type(screen.getByTestId("submission-desc-220"), "Clarified additive migration and verified tests.");
+    await user.click(screen.getByTestId("submission-submit-220"));
+
+    // Verify BOTH Rev #2 and original Rev #1 + feedback are preserved in UI
+    expect(await screen.findByTestId("submission-rev-badge-802")).toHaveTextContent("Rev #2");
+    expect(screen.getByText("Deliverable Rev 2")).toBeInTheDocument();
+    expect(screen.getByTestId("submission-rev-badge-801")).toHaveTextContent("Rev #1");
+    expect(screen.getByText("Please clarify revision migration steps.")).toBeInTheDocument();
   });
 });

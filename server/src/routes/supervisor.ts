@@ -3,7 +3,9 @@ import { getPrisma } from "../prisma.js";
 import { requireAuth, requireRole } from "../middleware/sessionAuth.js";
 import {
   parsePositiveIntId,
+  parseMilestoneStatusFilter,
   validateMilestoneInput,
+  validateMilestoneUpdateInput,
   validateFeedbackInput,
 } from "../utils/validation.js";
 
@@ -99,6 +101,16 @@ supervisorRouter.get("/teams/:teamId/milestones", requireAuth, async (req: Reque
       return;
     }
 
+    const statusFilterCheck = parseMilestoneStatusFilter(req.query?.status);
+    if (!statusFilterCheck.isValid) {
+      res.status(400).json({
+        error: "VALIDATION_ERROR",
+        message: "Invalid milestone status filter",
+        details: { status: statusFilterCheck.error },
+      });
+      return;
+    }
+
     const milestones = await prisma.milestone.findMany({
       where: { teamId },
       orderBy: [{ dueDate: "asc" }, { id: "asc" }],
@@ -111,9 +123,16 @@ supervisorRouter.get("/teams/:teamId/milestones", requireAuth, async (req: Reque
               orderBy: { createdAt: "asc" },
             },
           },
-          orderBy: { submittedAt: "desc" },
+          orderBy: [{ revisionNumber: "desc" }, { id: "desc" }],
         },
       },
+    });
+
+    const filteredMilestones = milestones.filter((ms: any) => {
+      if (statusFilterCheck.filter === "ALL") return true;
+      if (statusFilterCheck.filter === "LOCKED") return Boolean(ms.isLocked);
+      const latestStatus = ms.submissions?.[0]?.status ?? "NOT_STARTED";
+      return latestStatus === statusFilterCheck.filter;
     });
 
     res.status(200).json({
@@ -125,7 +144,8 @@ supervisorRouter.get("/teams/:teamId/milestones", requireAuth, async (req: Reque
         supervisor: team.supervisor,
         members: team.members.map((m) => m.user),
       },
-      milestones,
+      filter: statusFilterCheck.filter,
+      milestones: filteredMilestones,
     });
   } catch (err) {
     res.status(500).json({ error: "INTERNAL_ERROR", message: "Failed to load milestones" });
@@ -191,6 +211,65 @@ supervisorRouter.post(
       res.status(201).json({ milestone });
     } catch (err) {
       res.status(500).json({ error: "INTERNAL_ERROR", message: "Failed to create milestone" });
+    }
+  },
+);
+
+// ---------------------------------------------------------------------------
+// PATCH /api/milestones/:milestoneId (Sprint 2 F-03a: Supervisor Edit / Lock)
+// ---------------------------------------------------------------------------
+supervisorRouter.patch(
+  "/milestones/:milestoneId",
+  requireAuth,
+  requireRole("SUPERVISOR"),
+  async (req: Request, res: Response): Promise<void> => {
+    const milestoneId = parsePositiveIntId(req.params.milestoneId);
+    if (milestoneId === null) {
+      res.status(404).json({ error: "NOT_FOUND", message: "Milestone not found" });
+      return;
+    }
+
+    const prisma = getPrisma();
+    const userId = req.user!.id;
+
+    try {
+      const existing = await prisma.milestone.findUnique({
+        where: { id: milestoneId },
+        include: { team: true },
+      });
+
+      if (!existing) {
+        res.status(404).json({ error: "NOT_FOUND", message: "Milestone not found" });
+        return;
+      }
+
+      // BR-01: Must be assigned supervisor
+      if (existing.team.supervisorId !== userId) {
+        res.status(403).json({
+          error: "FORBIDDEN",
+          message: "You do not supervise the team that owns this milestone",
+        });
+        return;
+      }
+
+      const validation = validateMilestoneUpdateInput(req.body);
+      if (!validation.isValid) {
+        res.status(400).json({
+          error: "VALIDATION_ERROR",
+          message: "Validation failed",
+          details: validation.errors,
+        });
+        return;
+      }
+
+      const updatedMilestone = await prisma.milestone.update({
+        where: { id: milestoneId },
+        data: validation.data!,
+      });
+
+      res.status(200).json({ milestone: updatedMilestone });
+    } catch (err) {
+      res.status(500).json({ error: "INTERNAL_ERROR", message: "Failed to update milestone" });
     }
   },
 );

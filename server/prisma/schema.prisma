@@ -81,6 +81,7 @@ model Milestone {
   title       String
   description String
   dueDate     DateTime
+  isLocked    Boolean  @default(false)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -92,22 +93,27 @@ model Milestone {
 }
 
 model Submission {
-  id            Int              @id @default(autoincrement())
-  milestoneId   Int
-  submittedById Int
-  title         String
-  description   String
-  artifactUrl   String
-  status        SubmissionStatus @default(SUBMITTED)
-  isLate        Boolean          @default(false)
-  submittedAt   DateTime         @default(now())
-  updatedAt     DateTime         @updatedAt
+  id                 Int              @id @default(autoincrement())
+  milestoneId        Int
+  submittedById      Int
+  title              String
+  description        String
+  artifactUrl        String
+  status             SubmissionStatus @default(SUBMITTED)
+  isLate             Boolean          @default(false)
+  revisionNumber     Int              @default(1)
+  parentSubmissionId Int?
+  submittedAt        DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
 
-  milestone   Milestone  @relation(fields: [milestoneId], references: [id], onDelete: Cascade)
-  submittedBy User       @relation("SubmissionAuthor", fields: [submittedById], references: [id])
-  feedbacks   Feedback[]
+  milestone        Milestone    @relation(fields: [milestoneId], references: [id], onDelete: Cascade)
+  submittedBy      User         @relation("SubmissionAuthor", fields: [submittedById], references: [id])
+  parentSubmission Submission?  @relation("SubmissionRevisions", fields: [parentSubmissionId], references: [id], onDelete: SetNull)
+  revisions        Submission[] @relation("SubmissionRevisions")
+  feedbacks        Feedback[]
 
   @@index([milestoneId])
+  @@index([milestoneId, revisionNumber])
 }
 
 model Feedback {
