@@ -14,7 +14,11 @@ COPY client/package*.json ./
 RUN npm ci
 
 COPY client/ ./
+ARG VITE_COMMIT_SHA=local
+ARG VITE_APP_VERSION=v2.0.0
 ENV VITE_API_URL=""
+ENV VITE_COMMIT_SHA=$VITE_COMMIT_SHA
+ENV VITE_APP_VERSION=$VITE_APP_VERSION
 RUN npm run build
 
 # --- Stage 2: Build Backend (Express + TypeScript + Prisma) -------------------

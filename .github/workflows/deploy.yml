@@ -90,7 +90,12 @@ jobs:
         run: |
           gcloud auth configure-docker "$REGION-docker.pkg.dev" --quiet
           IMAGE="$REGION-docker.pkg.dev/$PROJECT_ID/sprintduo/sprintduo:$IMAGE_TAG"
-          docker build --tag "$IMAGE" .
+          SHORT_SHA="${IMAGE_TAG:0:7}"
+          APP_VER="$(node -p "require('./client/package.json').version" 2>/dev/null || echo "2.0.0")"
+          docker build \
+            --build-arg VITE_COMMIT_SHA="$SHORT_SHA" \
+            --build-arg VITE_APP_VERSION="v$APP_VER" \
+            --tag "$IMAGE" .
           docker push "$IMAGE"
 
       - name: Verify image, migrate and deploy

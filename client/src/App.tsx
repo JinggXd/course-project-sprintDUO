@@ -1,56 +1,25 @@
 import React, { useState, useEffect } from "react";
+import {
+  LATE_GRACE_WINDOW_MS,
+  type Milestone,
+  type MilestoneStatusFilter,
+  type Team,
+  type User,
+} from "./types";
+import { MilestoneEditForm } from "./components/MilestoneEditForm";
+import { SubmissionHistoryList } from "./components/SubmissionHistoryList";
 
-interface User {
-  id: number;
-  name: string;
-  email: string;
-  role: "STUDENT" | "SUPERVISOR";
-}
+const APP_VERSION = import.meta.env.VITE_APP_VERSION || "v2.0.0";
+const COMMIT_SHA = import.meta.env.VITE_COMMIT_SHA || "local";
 
-interface TeamMember {
-  id: number;
-  name: string;
-  email: string;
-}
-
-interface Team {
-  id: number;
-  code: string;
-  name: string;
-  projectTitle: string;
-  supervisor: { id: number; name: string; email: string };
-  members: TeamMember[];
-}
-
-interface Feedback {
-  id: number;
-  comment: string;
-  status: "APPROVED" | "CHANGES_REQUESTED";
-  createdAt: string;
-  supervisor?: { id: number; name: string; email: string };
-}
-
-interface Submission {
-  id: number;
-  title: string;
-  description: string;
-  artifactUrl: string;
-  status: "SUBMITTED" | "APPROVED" | "CHANGES_REQUESTED";
-  isLate?: boolean;
-  submittedAt: string;
-  submittedBy?: { id: number; name: string; email: string };
-  feedbacks: Feedback[];
-}
-
-const LATE_GRACE_WINDOW_MS = 24 * 60 * 60 * 1000;
-
-interface Milestone {
-  id: number;
-  title: string;
-  description: string;
-  dueDate: string;
-  submissions: Submission[];
-}
+const FILTER_OPTIONS: { value: MilestoneStatusFilter; label: string }[] = [
+  { value: "ALL", label: "All" },
+  { value: "NOT_STARTED", label: "Not Started" },
+  { value: "SUBMITTED", label: "Submitted" },
+  { value: "CHANGES_REQUESTED", label: "Changes Requested" },
+  { value: "APPROVED", label: "Approved" },
+  { value: "LOCKED", label: "Locked" },
+];
 
 export function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
@@ -66,13 +35,17 @@ export function App() {
   const [teams, setTeams] = useState<Team[]>([]);
   const [selectedTeam, setSelectedTeam] = useState<Team | null>(null);
   const [milestones, setMilestones] = useState<Milestone[]>([]);
+  const [statusFilter, setStatusFilter] = useState<MilestoneStatusFilter>("ALL");
 
   // Create Milestone form (Supervisor)
   const [newTitle, setNewTitle] = useState("");
   const [newDesc, setNewDesc] = useState("");
   const [newDueDate, setNewDueDate] = useState("");
 
-  // Submit Milestone Work form (Student — F-02)
+  // Inline Edit Milestone (Supervisor — Sprint 2 F-03a)
+  const [editingMilestoneId, setEditingMilestoneId] = useState<number | null>(null);
+
+  // Submit Milestone Work / Revision form (Student — F-02 & Sprint 2 F-03b)
   const [subTitle, setSubTitle] = useState<{ [msId: number]: string }>({});
   const [subDesc, setSubDesc] = useState<{ [msId: number]: string }>({});
   const [subUrl, setSubUrl] = useState<{ [msId: number]: string }>({});
@@ -111,6 +84,8 @@ export function App() {
     setNewTitle("");
     setNewDesc("");
     setNewDueDate("");
+    setEditingMilestoneId(null);
+    setStatusFilter("ALL");
     setSubTitle({});
     setSubDesc({});
     setSubUrl({});
@@ -164,7 +139,7 @@ export function App() {
         const data = await res.json();
         setTeams(data.teams);
         if (data.teams.length > 0) {
-          selectTeam(data.teams[0]);
+          selectTeam(data.teams[0], "ALL");
         }
       }
     } catch (err) {
@@ -172,16 +147,26 @@ export function App() {
     }
   }
 
-  async function selectTeam(team: Team) {
+  async function selectTeam(team: Team, filterOverride?: MilestoneStatusFilter) {
+    const activeFilter = filterOverride ?? statusFilter;
     setSelectedTeam(team);
+    setEditingMilestoneId(null);
     try {
-      const res = await fetch(`/api/teams/${team.id}/milestones`);
+      const query = activeFilter !== "ALL" ? `?status=${activeFilter}` : "";
+      const res = await fetch(`/api/teams/${team.id}/milestones${query}`);
       if (res.ok) {
         const data = await res.json();
         setMilestones(data.milestones);
       }
     } catch (err) {
       console.error("Failed to load milestones", err);
+    }
+  }
+
+  async function handleFilterChange(nextFilter: MilestoneStatusFilter) {
+    setStatusFilter(nextFilter);
+    if (selectedTeam) {
+      await selectTeam(selectedTeam, nextFilter);
     }
   }
 
@@ -216,6 +201,33 @@ export function App() {
     }
   }
 
+  async function handleUpdateMilestone(
+    milestoneId: number,
+    payload: { title: string; description: string; dueDate: string; isLocked: boolean },
+  ): Promise<boolean> {
+    setError(null);
+    setSuccess(null);
+    try {
+      const res = await fetch(`/api/milestones/${milestoneId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        const detailMsg = data.details ? Object.values(data.details).join(" ") : "";
+        setError(detailMsg || data.message || "Failed to update milestone");
+        return false;
+      }
+      setSuccess("Milestone updated successfully!");
+      if (selectedTeam) await selectTeam(selectedTeam);
+      return true;
+    } catch {
+      setError("Error updating milestone");
+      return false;
+    }
+  }
+
   async function handleSubmitMilestoneWork(e: React.FormEvent, milestoneId: number) {
     e.preventDefault();
     setError(null);
@@ -237,7 +249,12 @@ export function App() {
         setError(detailMsg || data.message || "Failed to submit milestone work");
         return;
       }
-      setSuccess("Milestone work submitted successfully!");
+      const rev = data.submission?.revisionNumber ?? 1;
+      setSuccess(
+        rev > 1
+          ? `Revision #${rev} submitted successfully (prior history preserved)!`
+          : "Milestone work submitted successfully!",
+      );
       setSubTitle({ ...subTitle, [milestoneId]: "" });
       setSubDesc({ ...subDesc, [milestoneId]: "" });
       setSubUrl({ ...subUrl, [milestoneId]: "" });
@@ -292,8 +309,13 @@ export function App() {
           <div className="col-12 col-md-6 col-lg-5">
             <div className="card shadow-sm border-0">
               <div className="card-body p-4">
-                <h2 className="text-center fw-bold mb-4">SprintDUO Sign In</h2>
-                <p className="text-center text-success small mb-3">Deployed automatically via CI/CD — Release B</p>
+                <h2 className="text-center fw-bold mb-3">SprintDUO Sign In</h2>
+                <p
+                  className="text-center text-muted small mb-3"
+                  data-testid="build-version-banner"
+                >
+                  SprintDUO {APP_VERSION} &middot; commit {COMMIT_SHA}
+                </p>
                 {error && (
                   <div className="alert alert-danger" role="alert">
                     {error}
@@ -371,7 +393,9 @@ export function App() {
 
       {/* Main Container */}
       <div className="container py-4">
-        <p className="text-success small mb-3">Deployed automatically via CI/CD — Release B</p>
+        <p className="text-muted small mb-3" data-testid="build-version-banner">
+          SprintDUO {APP_VERSION} &middot; commit {COMMIT_SHA}
+        </p>
         {error && (
           <div className="alert alert-danger alert-dismissible" role="alert">
             {error}
@@ -399,7 +423,7 @@ export function App() {
             <h4 className="card-title fw-bold">
               {currentUser.role === "SUPERVISOR" ? "Supervised Teams" : "My Project Team"}
             </h4>
-            <div className="d-flex gap-2 mb-3">
+            <div className="d-flex gap-2 mb-3 flex-wrap">
               {teams.map((t) => (
                 <button
                   key={t.id}
@@ -477,10 +501,32 @@ export function App() {
           </div>
         )}
 
-        {/* Milestones and Submissions List */}
-        <h4 className="fw-bold mb-3">Milestones</h4>
+        {/* Milestones Header + Sprint 2 Status Filter Bar */}
+        <div className="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+          <h4 className="fw-bold mb-0">Milestones</h4>
+          <div className="btn-group btn-group-sm flex-wrap" role="group" aria-label="Filter milestones by status">
+            {FILTER_OPTIONS.map((opt) => (
+              <button
+                key={opt.value}
+                type="button"
+                data-testid={`milestone-filter-${opt.value}`}
+                onClick={() => handleFilterChange(opt.value)}
+                className={`btn ${
+                  statusFilter === opt.value ? "btn-primary" : "btn-outline-secondary"
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
         {milestones.length === 0 ? (
-          <div className="alert alert-secondary">No milestones scheduled for this team yet.</div>
+          <div className="alert alert-secondary">
+            {statusFilter === "ALL"
+              ? "No milestones scheduled for this team yet."
+              : `No milestones match filter "${statusFilter}".`}
+          </div>
         ) : (
           <div className="row g-4">
             {milestones.map((ms) => {
@@ -488,6 +534,7 @@ export function App() {
               const dueMs = new Date(ms.dueDate).getTime();
               const isPastCutoff = nowMs > dueMs + LATE_GRACE_WINDOW_MS;
               const isInGraceWindow = nowMs > dueMs && !isPastCutoff;
+              const isLocked = Boolean(ms.isLocked);
               const dueBadgeClass = isPastCutoff
                 ? "bg-danger"
                 : isInGraceWindow
@@ -498,197 +545,190 @@ export function App() {
                 : isInGraceWindow
                 ? "GRACE PERIOD (24H)"
                 : "OPEN";
+
+              const latestSubmission = ms.submissions[0] ?? null;
+              const nextRevision = latestSubmission
+                ? (latestSubmission.revisionNumber ?? 1) + 1
+                : 1;
+              const canStudentSubmit =
+                !isLocked &&
+                !isPastCutoff &&
+                (!latestSubmission || latestSubmission.status === "CHANGES_REQUESTED");
+
               return (
                 <div key={ms.id} className="col-12">
                   <div className="card shadow-sm border-0">
-                    <div className="card-header bg-white d-flex justify-content-between align-items-center py-3">
+                    <div className="card-header bg-white d-flex justify-content-between align-items-center py-3 flex-wrap gap-2">
                       <div>
                         <h5 className="mb-1 fw-bold">{ms.title}</h5>
                         <small className="text-muted">
                           Due: {new Date(ms.dueDate).toLocaleString()}
                         </small>
                       </div>
-                      <span className={`badge ${dueBadgeClass}`}>
-                        {dueBadgeLabel}
-                      </span>
+                      <div className="d-flex align-items-center gap-2">
+                        {isLocked && (
+                          <span
+                            className="badge bg-dark"
+                            data-testid={`milestone-locked-badge-${ms.id}`}
+                          >
+                            LOCKED
+                          </span>
+                        )}
+                        <span className={`badge ${dueBadgeClass}`}>{dueBadgeLabel}</span>
+                        {currentUser.role === "SUPERVISOR" && (
+                          <button
+                            type="button"
+                            className="btn btn-outline-primary btn-sm"
+                            data-testid={`milestone-edit-toggle-${ms.id}`}
+                            onClick={() =>
+                              setEditingMilestoneId(editingMilestoneId === ms.id ? null : ms.id)
+                            }
+                          >
+                            {editingMilestoneId === ms.id ? "Close Edit" : "Edit / Lock"}
+                          </button>
+                        )}
+                      </div>
                     </div>
+
                     <div className="card-body">
                       <p>{ms.description}</p>
 
-                      {/* Student Action: Submit Milestone Work Form (F-02) */}
-                      {currentUser.role === "STUDENT" && (
-                        <div className="card p-3 my-3 border bg-white">
-                          <h6 className="fw-bold mb-2">Submit Milestone Work</h6>
-                          <form onSubmit={(e) => handleSubmitMilestoneWork(e, ms.id)}>
-                            <div className="row g-2">
-                              <div className="col-12 col-md-6">
-                                <input
-                                  type="text"
-                                  className="form-control form-control-sm"
-                                  placeholder="Submission Title (3–150 chars)"
-                                  data-testid={`submission-title-${ms.id}`}
-                                  value={subTitle[ms.id] || ""}
-                                  onChange={(e) =>
-                                    setSubTitle({ ...subTitle, [ms.id]: e.target.value })
-                                  }
-                                  required
-                                />
-                              </div>
-                              <div className="col-12 col-md-6">
-                                <input
-                                  type="text"
-                                  className="form-control form-control-sm"
-                                  placeholder="Artifact URL (https://...)"
-                                  data-testid={`submission-url-${ms.id}`}
-                                  value={subUrl[ms.id] || ""}
-                                  onChange={(e) =>
-                                    setSubUrl({ ...subUrl, [ms.id]: e.target.value })
-                                  }
-                                  required
-                                />
-                              </div>
-                              <div className="col-12 col-md-9">
-                                <input
-                                  type="text"
-                                  className="form-control form-control-sm"
-                                  placeholder="Submission description and summary (5–2000 chars)..."
-                                  data-testid={`submission-desc-${ms.id}`}
-                                  value={subDesc[ms.id] || ""}
-                                  onChange={(e) =>
-                                    setSubDesc({ ...subDesc, [ms.id]: e.target.value })
-                                  }
-                                  required
-                                />
-                              </div>
-                              <div className="col-12 col-md-3">
-                                <button
-                                  type="submit"
-                                  className="btn btn-primary btn-sm w-100"
-                                  data-testid={`submission-submit-${ms.id}`}
-                                >
-                                  Submit Work
-                                </button>
-                              </div>
-                            </div>
-                          </form>
-                        </div>
+                      {/* Supervisor Inline Edit / Lock Form (Sprint 2 F-03a) */}
+                      {currentUser.role === "SUPERVISOR" && editingMilestoneId === ms.id && (
+                        <MilestoneEditForm
+                          milestone={ms}
+                          onSave={handleUpdateMilestone}
+                          onCancel={() => setEditingMilestoneId(null)}
+                        />
                       )}
 
-                      {/* Submissions Section */}
-                      <h6 className="fw-bold mt-4 mb-2">Submissions</h6>
-                      {ms.submissions.length === 0 ? (
-                        <p className="text-muted small">No submission recorded yet.</p>
-                      ) : (
-                        ms.submissions.map((sub) => (
-                          <div key={sub.id} className="border rounded p-3 mb-3 bg-light">
-                            <div className="d-flex justify-content-between align-items-center mb-2">
-                              <strong>{sub.title}</strong>
-                              <div className="d-flex align-items-center gap-2">
-                                {sub.isLate && (
-                                  <span
-                                    className="badge bg-warning text-dark"
-                                    data-testid={`submission-late-badge-${sub.id}`}
-                                  >
-                                    LATE
-                                  </span>
-                                )}
-                                <span
-                                  className={`badge ${
-                                    sub.status === "APPROVED"
-                                      ? "bg-success"
-                                      : sub.status === "CHANGES_REQUESTED"
-                                      ? "bg-warning text-dark"
-                                      : "bg-primary"
-                                  }`}
-                                >
-                                  {sub.status}
-                                </span>
-                              </div>
+                      {/* Student Action: Submit / Resubmit Form or Explicit Closed/Status Notice */}
+                      {currentUser.role === "STUDENT" && (
+                        <>
+                          {isLocked ? (
+                            <div
+                              className="alert alert-dark py-2 my-3 small"
+                              data-testid={`milestone-closed-notice-${ms.id}`}
+                            >
+                              Milestone is locked by supervisor — submissions closed.
                             </div>
-                            <p className="small mb-2">{sub.description}</p>
-                            <p className="small mb-2">
-                              Artifact:{" "}
-                              <a
-                                href={sub.artifactUrl}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="fw-bold"
-                              >
-                                {sub.artifactUrl}
-                              </a>
-                            </p>
-                            <div className="text-muted small mb-3">
-                              Submitted by {sub.submittedBy?.name || "Student"} on{" "}
-                              {new Date(sub.submittedAt).toLocaleString()}
+                          ) : isPastCutoff ? (
+                            <div
+                              className="alert alert-danger py-2 my-3 small"
+                              data-testid={`milestone-closed-notice-${ms.id}`}
+                            >
+                              Submissions closed (24-hour grace window expired).
                             </div>
-
-                            {/* Existing Feedback */}
-                            {sub.feedbacks.length > 0 && (
-                              <div className="mb-3">
-                                <h6>Supervisor Feedback:</h6>
-                                {sub.feedbacks.map((fb) => (
-                                  <div
-                                    key={fb.id}
-                                    className="border-start border-3 border-info ps-3 py-1 my-2 bg-white"
-                                  >
-                                    <div className="small fw-bold">
-                                      {fb.supervisor?.name || "Supervisor"} — {fb.status}
-                                    </div>
-                                    <div className="small">{fb.comment}</div>
-                                  </div>
-                                ))}
-                              </div>
-                            )}
-
-                            {/* Supervisor Feedback Form */}
-                            {currentUser.role === "SUPERVISOR" && (
-                              <div className="card p-3 mt-3 border">
-                                <h6 className="fw-bold small mb-2">Record Evaluation Feedback</h6>
+                          ) : latestSubmission?.status === "APPROVED" ? (
+                            <div
+                              className="alert alert-success py-2 my-3 small"
+                              data-testid={`milestone-approved-notice-${ms.id}`}
+                            >
+                              Milestone Approved (Rev #{latestSubmission.revisionNumber ?? 1}) — no
+                              further revisions needed.
+                            </div>
+                          ) : latestSubmission?.status === "SUBMITTED" ? (
+                            <div
+                              className="alert alert-info py-2 my-3 small"
+                              data-testid={`milestone-pending-notice-${ms.id}`}
+                            >
+                              Submission Rev #{latestSubmission.revisionNumber ?? 1} is awaiting
+                              supervisor review.
+                            </div>
+                          ) : canStudentSubmit ? (
+                            <div className="card p-3 my-3 border bg-white">
+                              <h6 className="fw-bold mb-1">
+                                {latestSubmission?.status === "CHANGES_REQUESTED"
+                                  ? `Submit Revision (Rev #${nextRevision})`
+                                  : "Submit Milestone Work"}
+                              </h6>
+                              {latestSubmission?.status === "CHANGES_REQUESTED" && (
+                                <p className="text-muted small mb-2">
+                                  Submitting a new revision preserves all previous submissions and
+                                  supervisor feedback in history.
+                                </p>
+                              )}
+                              <form onSubmit={(e) => handleSubmitMilestoneWork(e, ms.id)}>
                                 <div className="row g-2">
-                                  <div className="col-12 col-md-8">
+                                  <div className="col-12 col-md-6">
                                     <input
                                       type="text"
                                       className="form-control form-control-sm"
-                                      placeholder="Feedback evaluation notes..."
-                                      value={feedbackComment[sub.id] || ""}
+                                      placeholder="Submission Title (3–150 chars)"
+                                      data-testid={`submission-title-${ms.id}`}
+                                      value={subTitle[ms.id] || ""}
                                       onChange={(e) =>
-                                        setFeedbackComment({
-                                          ...feedbackComment,
-                                          [sub.id]: e.target.value,
-                                        })
+                                        setSubTitle({ ...subTitle, [ms.id]: e.target.value })
                                       }
+                                      required
                                     />
                                   </div>
-                                  <div className="col-6 col-md-2">
-                                    <select
-                                      className="form-select form-select-sm"
-                                      value={feedbackStatus[sub.id] || "APPROVED"}
+                                  <div className="col-12 col-md-6">
+                                    <input
+                                      type="text"
+                                      className="form-control form-control-sm"
+                                      placeholder="Artifact URL (https://...)"
+                                      data-testid={`submission-url-${ms.id}`}
+                                      value={subUrl[ms.id] || ""}
                                       onChange={(e) =>
-                                        setFeedbackStatus({
-                                          ...feedbackStatus,
-                                          [sub.id]: e.target.value as any,
-                                        })
+                                        setSubUrl({ ...subUrl, [ms.id]: e.target.value })
                                       }
-                                    >
-                                      <option value="APPROVED">APPROVED</option>
-                                      <option value="CHANGES_REQUESTED">CHANGES_REQUESTED</option>
-                                    </select>
+                                      required
+                                    />
                                   </div>
-                                  <div className="col-6 col-md-2">
+                                  <div className="col-12 col-md-9">
+                                    <input
+                                      type="text"
+                                      className="form-control form-control-sm"
+                                      placeholder="Submission description and summary (5–2000 chars)..."
+                                      data-testid={`submission-desc-${ms.id}`}
+                                      value={subDesc[ms.id] || ""}
+                                      onChange={(e) =>
+                                        setSubDesc({ ...subDesc, [ms.id]: e.target.value })
+                                      }
+                                      required
+                                    />
+                                  </div>
+                                  <div className="col-12 col-md-3">
                                     <button
-                                      type="button"
-                                      onClick={() => handleRecordFeedback(sub.id)}
+                                      type="submit"
                                       className="btn btn-primary btn-sm w-100"
+                                      data-testid={`submission-submit-${ms.id}`}
                                     >
-                                      Submit
+                                      {latestSubmission?.status === "CHANGES_REQUESTED"
+                                        ? `Submit Rev #${nextRevision}`
+                                        : "Submit Work"}
                                     </button>
                                   </div>
                                 </div>
-                              </div>
-                            )}
-                          </div>
-                        ))
+                              </form>
+                            </div>
+                          ) : null}
+                        </>
                       )}
+
+                      {/* Submissions & Revision History Section */}
+                      <h6 className="fw-bold mt-4 mb-2">
+                        Submissions{" "}
+                        {ms.submissions.length > 0 && (
+                          <span className="text-muted fw-normal small">
+                            ({ms.submissions.length} revision{ms.submissions.length > 1 ? "s" : ""})
+                          </span>
+                        )}
+                      </h6>
+                      <SubmissionHistoryList
+                        submissions={ms.submissions}
+                        isSupervisor={currentUser.role === "SUPERVISOR"}
+                        feedbackComment={feedbackComment}
+                        feedbackStatus={feedbackStatus}
+                        onChangeFeedbackComment={(subId, value) =>
+                          setFeedbackComment({ ...feedbackComment, [subId]: value })
+                        }
+                        onChangeFeedbackStatus={(subId, value) =>
+                          setFeedbackStatus({ ...feedbackStatus, [subId]: value })
+                        }
+                        onRecordFeedback={handleRecordFeedback}
+                      />
                     </div>
                   </div>
                 </div>
