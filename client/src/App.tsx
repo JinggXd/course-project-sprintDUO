@@ -4,12 +4,14 @@ import {
   type Milestone,
   type MilestoneStatusFilter,
   type Team,
+  type TeamProgressResponse,
   type User,
 } from "./types";
 import { MilestoneEditForm } from "./components/MilestoneEditForm";
 import { SubmissionHistoryList } from "./components/SubmissionHistoryList";
+import { TeamProgressBoard } from "./components/TeamProgressBoard";
 
-const APP_VERSION = import.meta.env.VITE_APP_VERSION || "v2.0.0";
+const APP_VERSION = import.meta.env.VITE_APP_VERSION || "v2.1.0-rc1";
 const COMMIT_SHA = import.meta.env.VITE_COMMIT_SHA || "local";
 
 const FILTER_OPTIONS: { value: MilestoneStatusFilter; label: string }[] = [
@@ -35,6 +37,7 @@ export function App() {
   const [teams, setTeams] = useState<Team[]>([]);
   const [selectedTeam, setSelectedTeam] = useState<Team | null>(null);
   const [milestones, setMilestones] = useState<Milestone[]>([]);
+  const [teamProgress, setTeamProgress] = useState<TeamProgressResponse | null>(null);
   const [statusFilter, setStatusFilter] = useState<MilestoneStatusFilter>("ALL");
 
   // Create Milestone form (Supervisor)
@@ -129,6 +132,7 @@ export function App() {
       setTeams([]);
       setSelectedTeam(null);
       setMilestones([]);
+      setTeamProgress(null);
     }
   }
 
@@ -153,13 +157,22 @@ export function App() {
     setEditingMilestoneId(null);
     try {
       const query = activeFilter !== "ALL" ? `?status=${activeFilter}` : "";
-      const res = await fetch(`/api/teams/${team.id}/milestones${query}`);
-      if (res.ok) {
-        const data = await res.json();
+      const [msRes, progRes] = await Promise.all([
+        fetch(`/api/teams/${team.id}/milestones${query}`),
+        fetch(`/api/teams/${team.id}/progress`),
+      ]);
+      if (msRes.ok) {
+        const data = await msRes.json();
         setMilestones(data.milestones);
       }
+      if (progRes.ok) {
+        const progData = await progRes.json();
+        setTeamProgress(progData);
+      } else {
+        setTeamProgress(null);
+      }
     } catch (err) {
-      console.error("Failed to load milestones", err);
+      console.error("Failed to load team milestones or progress", err);
     }
   }
 
@@ -453,6 +466,9 @@ export function App() {
             )}
           </div>
         </div>
+
+        {/* Sprint 3 F-04a: Team Milestone Progress Board */}
+        {selectedTeam && <TeamProgressBoard progress={teamProgress} />}
 
         {/* Supervisor Actions: Create Milestone */}
         {currentUser.role === "SUPERVISOR" && selectedTeam && (

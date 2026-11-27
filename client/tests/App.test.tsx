@@ -690,4 +690,186 @@ describe("SprintDUO Client UI — TEST-03 & TEST-04 Student Submission & Persist
     expect(screen.getByTestId("submission-rev-badge-801")).toHaveTextContent("Rev #1");
     expect(screen.getByText("Please clarify revision migration steps.")).toBeInTheDocument();
   });
+
+  // ---------------------------------------------------------------------------
+  // Sprint 3 F-04a Client RTL Tests (TEST-13 & TD-02: >= 2 new UI tests)
+  // ---------------------------------------------------------------------------
+  it("TEST-13a (Sprint 3 F-04a): renders Team Progress Board completion bar, KPI counts, and 4 status columns", async () => {
+    const progressPayload = {
+      team: { id: 1, code: "TEAM-ALPHA", name: mockTeam.name, projectTitle: mockTeam.projectTitle },
+      summary: {
+        totalMilestones: 2,
+        totalSubmissions: 2,
+        lockedCount: 1,
+        lateSubmissionCount: 1,
+        completionPercent: 50,
+        counts: {
+          NOT_STARTED: 1,
+          SUBMITTED: 0,
+          CHANGES_REQUESTED: 0,
+          APPROVED: 1,
+        },
+      },
+      columns: {
+        NOT_STARTED: [
+          {
+            id: 301,
+            title: "Sprint 3 Board Pending Item",
+            dueDate: futureDue,
+            isLocked: true,
+            latestRevisionNumber: 0,
+            latestStatus: "NOT_STARTED",
+            isLate: false,
+            submissionCount: 0,
+          },
+        ],
+        SUBMITTED: [],
+        CHANGES_REQUESTED: [],
+        APPROVED: [
+          {
+            id: 302,
+            title: "Sprint 3 Board Approved Item",
+            dueDate: futureDue,
+            isLocked: false,
+            latestRevisionNumber: 2,
+            latestStatus: "APPROVED",
+            isLate: true,
+            submissionCount: 2,
+          },
+        ],
+      },
+    };
+
+    globalThis.fetch = vi.fn(async (input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input.toString();
+      if (url === "/api/auth/me") {
+        return { ok: true, status: 200, json: async () => ({ user: mockStudent }) } as Response;
+      }
+      if (url === "/api/teams") {
+        return { ok: true, status: 200, json: async () => ({ teams: [mockTeam] }) } as Response;
+      }
+      if (url.startsWith("/api/teams/1/milestones")) {
+        return { ok: true, status: 200, json: async () => ({ team: mockTeam, milestones: [] }) } as Response;
+      }
+      if (url === "/api/teams/1/progress") {
+        return { ok: true, status: 200, json: async () => progressPayload } as Response;
+      }
+      return { ok: false, status: 404, json: async () => ({}) } as Response;
+    }) as any;
+
+    render(<App />);
+
+    expect(await screen.findByTestId("team-progress-board")).toBeInTheDocument();
+    expect(screen.getByTestId("progress-completion-bar")).toHaveTextContent("50%");
+    expect(screen.getByTestId("progress-col-NOT_STARTED")).toHaveTextContent("Sprint 3 Board Pending Item");
+    expect(screen.getByTestId("progress-col-APPROVED")).toHaveTextContent("Sprint 3 Board Approved Item");
+    expect(screen.getByTestId("progress-col-APPROVED")).toHaveTextContent("Rev #2");
+  });
+
+  it("TEST-13b (Sprint 3 F-04a): updates Team Progress Board live after student submits work", async () => {
+    let submitted = false;
+    let milestonesState = [
+      {
+        id: 310,
+        title: "Sprint 3 Live Progress Milestone",
+        description: "Verify board refreshes after submission",
+        dueDate: futureDue,
+        isLocked: false,
+        submissions: [] as any[],
+      },
+    ];
+
+    globalThis.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input.toString();
+      const method = init?.method || "GET";
+
+      if (url === "/api/auth/me") {
+        return { ok: true, status: 200, json: async () => ({ user: mockStudent }) } as Response;
+      }
+      if (url === "/api/teams") {
+        return { ok: true, status: 200, json: async () => ({ teams: [mockTeam] }) } as Response;
+      }
+      if (url.startsWith("/api/teams/1/milestones")) {
+        return { ok: true, status: 200, json: async () => ({ team: mockTeam, milestones: milestonesState }) } as Response;
+      }
+      if (url === "/api/teams/1/progress") {
+        const item = {
+          id: 310,
+          title: "Sprint 3 Live Progress Milestone",
+          dueDate: futureDue,
+          isLocked: false,
+          latestRevisionNumber: submitted ? 1 : 0,
+          latestStatus: submitted ? "SUBMITTED" : "NOT_STARTED",
+          isLate: false,
+          submissionCount: submitted ? 1 : 0,
+        };
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            team: { id: 1, code: "TEAM-ALPHA", name: mockTeam.name, projectTitle: mockTeam.projectTitle },
+            summary: {
+              totalMilestones: 1,
+              totalSubmissions: submitted ? 1 : 0,
+              lockedCount: 0,
+              lateSubmissionCount: 0,
+              completionPercent: 0,
+              counts: {
+                NOT_STARTED: submitted ? 0 : 1,
+                SUBMITTED: submitted ? 1 : 0,
+                CHANGES_REQUESTED: 0,
+                APPROVED: 0,
+              },
+            },
+            columns: {
+              NOT_STARTED: submitted ? [] : [item],
+              SUBMITTED: submitted ? [item] : [],
+              CHANGES_REQUESTED: [],
+              APPROVED: [],
+            },
+          }),
+        } as Response;
+      }
+      if (url === "/api/milestones/310/submissions" && method === "POST") {
+        submitted = true;
+        const body = JSON.parse(init?.body as string);
+        const created = {
+          id: 950,
+          milestoneId: 310,
+          submittedById: mockStudent.id,
+          title: body.title,
+          description: body.description,
+          artifactUrl: body.artifactUrl,
+          status: "SUBMITTED",
+          isLate: false,
+          revisionNumber: 1,
+          parentSubmissionId: null,
+          submittedAt: new Date().toISOString(),
+          submittedBy: mockStudent,
+          feedbacks: [],
+        };
+        milestonesState = [{ ...milestonesState[0], submissions: [created] }];
+        return { ok: true, status: 201, json: async () => ({ submission: created }) } as Response;
+      }
+      return { ok: false, status: 404, json: async () => ({}) } as Response;
+    }) as any;
+
+    const user = userEvent.setup();
+    render(<App />);
+
+    expect(await screen.findByTestId("progress-col-NOT_STARTED")).toHaveTextContent(
+      "Sprint 3 Live Progress Milestone",
+    );
+
+    await user.type(screen.getByTestId("submission-title-310"), "Board Refresh Sub");
+    await user.type(screen.getByTestId("submission-url-310"), "https://github.com/JinggXd/course-project-sprintDUO");
+    await user.type(screen.getByTestId("submission-desc-310"), "Submitting to trigger progress board transition.");
+    await user.click(screen.getByTestId("submission-submit-310"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("progress-col-SUBMITTED")).toHaveTextContent(
+        "Sprint 3 Live Progress Milestone",
+      );
+    });
+  });
 });
