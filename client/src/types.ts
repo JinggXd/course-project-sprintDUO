@@ -59,4 +59,39 @@ export type MilestoneStatusFilter =
   | "APPROVED"
   | "LOCKED";
 
+export type ProgressColumnStatus =
+  | "NOT_STARTED"
+  | "SUBMITTED"
+  | "CHANGES_REQUESTED"
+  | "APPROVED";
+
+export interface ProgressBoardItem {
+  id: number;
+  title: string;
+  dueDate: string;
+  isLocked: boolean;
+  latestRevisionNumber: number;
+  latestStatus: ProgressColumnStatus;
+  isLate: boolean;
+  submissionCount: number;
+}
+
+export interface TeamProgressResponse {
+  team: {
+    id: number;
+    code: string;
+    name: string;
+    projectTitle: string;
+  };
+  summary: {
+    totalMilestones: number;
+    totalSubmissions: number;
+    lockedCount: number;
+    lateSubmissionCount: number;
+    completionPercent: number;
+    counts: Record<ProgressColumnStatus, number>;
+  };
+  columns: Record<ProgressColumnStatus, ProgressBoardItem[]>;
+}
+
 export const LATE_GRACE_WINDOW_MS = 24 * 60 * 60 * 1000;

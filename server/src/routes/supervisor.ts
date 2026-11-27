@@ -8,6 +8,7 @@ import {
   validateMilestoneUpdateInput,
   validateFeedbackInput,
 } from "../utils/validation.js";
+import { computeTeamProgress } from "../utils/progress.js";
 
 export const supervisorRouter = Router();
 
@@ -135,22 +136,96 @@ supervisorRouter.get("/teams/:teamId/milestones", requireAuth, async (req: Reque
       return latestStatus === statusFilterCheck.filter;
     });
 
-    res.status(200).json({
-      team: {
-        id: team.id,
-        code: team.code,
-        name: team.name,
-        projectTitle: team.projectTitle,
-        supervisor: team.supervisor,
-        members: team.members.map((m) => m.user),
-      },
-      filter: statusFilterCheck.filter,
-      milestones: filteredMilestones,
-    });
-  } catch (err) {
-    res.status(500).json({ error: "INTERNAL_ERROR", message: "Failed to load milestones" });
-  }
-});
+      res.status(200).json({
+        team: {
+          id: team.id,
+          code: team.code,
+          name: team.name,
+          projectTitle: team.projectTitle,
+          supervisor: team.supervisor,
+          members: team.members.map((m) => m.user),
+        },
+        filter: statusFilterCheck.filter,
+        milestones: filteredMilestones,
+      });
+    } catch (err) {
+      res.status(500).json({ error: "INTERNAL_ERROR", message: "Failed to load milestones" });
+    }
+  });
+
+// ---------------------------------------------------------------------------
+// GET /api/teams/:teamId/progress (Sprint 3 F-04a: Team Progress Board, BR-01)
+// ---------------------------------------------------------------------------
+supervisorRouter.get(
+  "/teams/:teamId/progress",
+  requireAuth,
+  async (req: Request, res: Response): Promise<void> => {
+    const teamId = parsePositiveIntId(req.params.teamId);
+    if (teamId === null) {
+      res.status(404).json({ error: "NOT_FOUND", message: "Team not found" });
+      return;
+    }
+
+    const prisma = getPrisma();
+    const userId = req.user!.id;
+
+    try {
+      const team = await prisma.team.findUnique({
+        where: { id: teamId },
+        include: {
+          members: true,
+        },
+      });
+
+      if (!team) {
+        res.status(404).json({ error: "NOT_FOUND", message: "Team not found" });
+        return;
+      }
+
+      // BR-01: Must be assigned supervisor or registered team member
+      const isSupervisor = team.supervisorId === userId;
+      const isMember = team.members.some((m) => m.userId === userId);
+      if (!isSupervisor && !isMember) {
+        res.status(403).json({
+          error: "FORBIDDEN",
+          message: "You are not authorized to view this team's progress board",
+        });
+        return;
+      }
+
+      const milestones = await prisma.milestone.findMany({
+        where: { teamId },
+        orderBy: [{ dueDate: "asc" }, { id: "asc" }],
+        include: {
+          submissions: {
+            select: {
+              id: true,
+              status: true,
+              isLate: true,
+              revisionNumber: true,
+            },
+            orderBy: [{ revisionNumber: "desc" }, { id: "desc" }],
+          },
+        },
+      });
+
+      const board = computeTeamProgress(milestones as any);
+
+      res.status(200).json({
+        team: {
+          id: team.id,
+          code: team.code,
+          name: team.name,
+          projectTitle: team.projectTitle,
+        },
+        summary: board.summary,
+        columns: board.columns,
+      });
+    } catch (err) {
+      res.status(500).json({ error: "INTERNAL_ERROR", message: "Failed to load team progress board" });
+    }
+  },
+);
 
 // ---------------------------------------------------------------------------
 // POST /api/teams/:teamId/milestones (Supervisor Only, BR-01 & BR-02)
